@@ -10,7 +10,6 @@ Every pull request is analyzed with CodeQL to ensure the code remains secure.
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue.svg)](https://github.com/MatanYemini/bitbucket-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![npm version](https://badge.fury.io/js/bitbucket-mcp.svg)](https://www.npmjs.com/package/bitbucket-mcp)
-[![smithery badge](https://smithery.ai/badge/@MatanYemini/bitbucket-mcp)](https://smithery.ai/server/@MatanYemini/bitbucket-mcp)
 
 ## Overview
 Checkout out the [official npm package](https://www.npmjs.com/package/bitbucket-mcp)
