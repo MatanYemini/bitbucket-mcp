@@ -1,6 +1,6 @@
 {
   "name": "bitbucket-mcp",
-  "version": "4.1.0",
+  "version": "0.1.0",
   "description": "Model Context Protocol (MCP) server for Bitbucket Cloud and Server API integration",
   "type": "module",
   "main": "dist/index.js",
@@ -40,11 +40,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MatanYemini/bitbucket-mcp"
+    "url": "git+https://github.com/CodingKeg/bitbucket-mcp"
   },
-  "homepage": "https://github.com/MatanYemini/bitbucket-mcp#readme",
+  "homepage": "https://github.com/CodingKeg/bitbucket-mcp#readme",
   "bugs": {
-    "url": "https://github.com/MatanYemini/bitbucket-mcp/issues"
+    "url": "https://github.com/CodingKeg/bitbucket-mcp/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.1.1",

@@ -6,8 +6,8 @@ A Model Context Protocol (MCP) server for integrating with Bitbucket Cloud and S
 This is a safe and responsible package — no DELETE operations are used, so there’s no risk of data loss.
 Every pull request is analyzed with CodeQL to ensure the code remains secure.
 
-[![CodeQL](https://github.com/MatanYemini/bitbucket-mcp/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/MatanYemini/bitbucket-mcp/actions/workflows/github-code-scanning/codeql)
-[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue.svg)](https://github.com/MatanYemini/bitbucket-mcp)
+[![CodeQL](https://github.com/CodingKeg/bitbucket-mcp/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/CodingKeg/bitbucket-mcp/actions/workflows/github-code-scanning/codeql)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue.svg)](https://github.com/CodingKeg/bitbucket-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![npm version](https://badge.fury.io/js/bitbucket-mcp.svg)](https://www.npmjs.com/package/bitbucket-mcp)
 
@@ -477,7 +477,7 @@ Lists commit statuses for a pull request.
 
 ```bash
 # Clone the repository
-git clone https://github.com/MatanYemini/bitbucket-mcp.git
+git clone https://github.com/CodingKeg/bitbucket-mcp.git
 cd bitbucket-mcp
 
 # Install dependencies
@@ -496,7 +496,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Links
 
-- [GitHub Repository](https://github.com/MatanYemini/bitbucket-mcp)
+- [GitHub Repository](https://github.com/CodingKeg/bitbucket-mcp)
 - [npm Package](https://www.npmjs.com/package/bitbucket-mcp)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [Bitbucket REST API - Pull Requests](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/)
