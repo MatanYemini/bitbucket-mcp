@@ -341,6 +341,29 @@ class BitbucketServer {
           },
         },
         {
+          name: "findPullRequests",
+          description: "Find pull requests for a repository by search query",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              limit: {
+                type: "number",
+                description: "Maximum number of pull requests to return",
+              },
+              search_query: {
+                type: "string",
+                description: "Search query",
+              },
+            },
+            required: ["workspace", "repo_slug", "search_query"],
+          },
+        },
+        {
           name: "createPullRequest",
           description: "Create a new pull request",
           inputSchema: {
@@ -806,6 +829,13 @@ class BitbucketServer {
               args.state as "OPEN" | "MERGED" | "DECLINED" | "SUPERSEDED",
               args.limit as number
             );
+          case "findPullRequests":
+            return await this.findPullRequests(
+                args.workspace as string,
+                args.repo_slug as string,
+                args.search_query as string,
+                args.limit as number
+            );
           case "createPullRequest":
             return await this.createPullRequest(
               args.workspace as string,
@@ -1009,6 +1039,55 @@ class BitbucketServer {
         `Failed to get repository: ${
           error instanceof Error ? error.message : String(error)
         }`
+      );
+    }
+  }
+
+  async findPullRequests(
+      workspace: string,
+      repo_slug: string,
+      search_query: string,
+      limit: number = 10
+  ) {
+    try {
+      logger.info("Finding Bitbucket pull requests", {
+        workspace,
+        repo_slug,
+        search_query,
+        limit,
+      });
+
+      const query = search_query.split(',').map(queryPart => `description~"${queryPart}" OR title~"${queryPart}"`).join(" OR ");
+
+      const response = await this.api.get(
+          `/repositories/${workspace}/${repo_slug}/pullrequests`,
+          {
+            params: {
+              q: `(${query})`,
+              limit,
+            },
+          }
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data.values, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error finding pull requests", {
+        error,
+        workspace,
+        repo_slug,
+      });
+      throw new McpError(
+          ErrorCode.InternalError,
+          `Failed to find pull requests: ${
+              error instanceof Error ? error.message : String(error)
+          }`
       );
     }
   }
