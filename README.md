@@ -28,9 +28,9 @@ The easiest way to use this MCP server is via NPX, which allows you to run it wi
 
 ```bash
 # Run with environment variables
-BITBUCKET_URL="https://bitbucket.org/your-workspace" \
-BITBUCKET_USERNAME="your-username" \
-BITBUCKET_PASSWORD="your-app-password" \
+BITBUCKET_WORKSPACE="quatico" \
+BITBUCKET_USERNAME="your-email" \
+BITBUCKET_PASSWORD="your-scoped-api-token" \
 npx -y bitbucket-mcp@latest
 ```
 
@@ -51,15 +51,34 @@ Then run it with:
 ```bash
 # If installed globally
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
-BITBUCKET_USERNAME="your-username" \
-BITBUCKET_PASSWORD="your-app-password" \
+BITBUCKET_USERNAME="your-email" \
+BITBUCKET_PASSWORD="your-scoped-api-token" \
 bitbucket-mcp
 
 # If installed in your project
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
-BITBUCKET_USERNAME="your-username" \
-BITBUCKET_PASSWORD="your-app-password" \
+BITBUCKET_USERNAME="your-email" \
+BITBUCKET_PASSWORD="your-scoped-api-token" \
 npx bitbucket-mcp
+```
+
+### Local Installation
+
+Alternatively, you can install it globally or as part of your project:
+
+```bash
+# Create package
+npm pack
+```
+
+Then run it with:
+
+```bash
+# If installed globally
+BITBUCKET_USERNAME="your-email" \
+BITBUCKET_PASSWORD="your-scoped-api-token" \
+BITBUCKET_WORKSPACE="quatico" \
+bitbucket-mcp@/Users/egemenkaba/IdeaProjects/bitbucket-mcp/bitbucket-mcp-4.2.0.tgz
 ```
 
 ## Configuration
@@ -69,12 +88,12 @@ npx bitbucket-mcp
 Configure the server using the following environment variables:
 
 | Variable              | Description                                                       | Required |
-| --------------------- | ----------------------------------------------------------------- | -------- |
+| --------------------- |-------------------------------------------------------------------|----------|
 | `BITBUCKET_URL`       | Bitbucket base URL (e.g., "https://bitbucket.org/your-workspace") | Yes      |
 | `BITBUCKET_USERNAME`  | Your Bitbucket username                                           | Yes\*    |
 | `BITBUCKET_PASSWORD`  | Your Bitbucket app password                                       | Yes\*    |
 | `BITBUCKET_TOKEN`     | Your Bitbucket access token (alternative to username/password)    | No       |
-| `BITBUCKET_WORKSPACE` | Default workspace to use when not specified                       | No       |
+| `BITBUCKET_WORKSPACE` | Default workspace to use when not specified (for us: quatico)     | Yes      |
 
 \* Either `BITBUCKET_TOKEN` or both `BITBUCKET_USERNAME` and `BITBUCKET_PASSWORD` must be provided.
 
@@ -100,9 +119,9 @@ To integrate this MCP server with Cursor:
 "bitbucket": {
   "command": "npx",
   "env": {
-    "BITBUCKET_URL": "https://bitbucket.org/your-workspace",
-    "BITBUCKET_USERNAME": "your-username",
-    "BITBUCKET_PASSWORD": "your-app-password"
+    "BITBUCKET_WORKSPACE": "quatico",
+    "BITBUCKET_USERNAME": "your-email",
+    "BITBUCKET_PASSWORD": "your-scoped-api-token"
   },
   "args": ["-y", "bitbucket-mcp@latest"]
 }
@@ -486,8 +505,8 @@ npm install
 # Build the project
 npm run build
 
-# Run in development mode
-npm run dev
+# Create local package
+npm pack
 ```
 
 ## License
