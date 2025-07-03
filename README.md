@@ -106,7 +106,7 @@ Configure the server using the following environment variables:
    - Pull requests: Read, Write
 4. Copy the generated password and use it as the `BITBUCKET_PASSWORD` environment variable
 
-## Integration with Cursor
+## Integration with IntelliJ
 
 To integrate this MCP server with Cursor:
 
@@ -130,7 +130,7 @@ To integrate this MCP server with Cursor:
 5. Save the configuration
 6. Use the "/bitbucket" command in Cursor to access Bitbucket repositories and pull requests
 
-### Using a Local Build with Cursor
+### Using a Local Build with IntelliJ
 
 If you're developing locally and want to test your changes:
 
@@ -141,6 +141,44 @@ If you're developing locally and want to test your changes:
     "BITBUCKET_URL": "https://bitbucket.org/your-workspace",
     "BITBUCKET_USERNAME": "your-username",
     "BITBUCKET_PASSWORD": "your-app-password"
+  },
+  "args": ["/path/to/your/local/bitbucket-mcp/dist/index.js"]
+}
+```
+
+## Integration with Cursor
+
+To integrate this MCP server with Cursor:
+
+1. Open Cursor
+2. Go to Settings > Extensions
+3. Click on "Model Context Protocol"
+4. Add a new MCP configuration:
+
+```json
+"bitbucket": {
+  "command": "npx",
+  "env": {
+    "BITBUCKET_WORKSPACE": "quatico",
+    "BITBUCKET_TOKEN": "your-scoped-api-token"
+  },
+  "args": ["-y", "bitbucket-mcp@latest"]
+}
+```
+
+5. Save the configuration
+6. Use the "/bitbucket" command in Cursor to access Bitbucket repositories and pull requests
+
+### Using a Local Build with Cursor
+
+If you're developing locally and want to test your changes:
+
+```json
+"bitbucket-local": {
+  "command": "node",
+  "env": {
+   "BITBUCKET_WORKSPACE": "quatico",
+   "BITBUCKET_TOKEN": "your-scoped-api-token"
   },
   "args": ["/path/to/your/local/bitbucket-mcp/dist/index.js"]
 }
