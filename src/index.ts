@@ -1475,15 +1475,23 @@ class BitbucketServer {
     repo_slug: string,
     pull_request_id: string
   ) {
+
+    logger.info("Getting Bitbucket pull request diff", {
+      workspace,
+      repo_slug,
+      pull_request_id,
+    });
+
+    const response = await this.api.get(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`
+    );
+
+    const diffstathref = response.data.links.diffstat.href.replace(this.config.baseUrl, "");
+
     try {
-      logger.info("Getting Bitbucket pull request diff", {
-        workspace,
-        repo_slug,
-        pull_request_id,
-      });
 
       const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/diff`,
+          diffstathref,
         {
           headers: {
             Accept: "text/plain",
