@@ -3,7 +3,7 @@
 A Model Context Protocol (MCP) server for integrating with Bitbucket Cloud and Server APIs. This MCP server enables AI assistants like Cursor to interact with your Bitbucket repositories, pull requests, and other resources.
 
 ## Safety First
-This is a safe and responsible package — no DELETE operations are used, so there’s no risk of data loss.
+This is a safe and responsible package — no DELETE operations are used, so there's no risk of data loss.
 Every pull request is analyzed with CodeQL to ensure the code remains secure.
 
 [![CodeQL](https://github.com/MatanYemini/bitbucket-mcp/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/MatanYemini/bitbucket-mcp/actions/workflows/github-code-scanning/codeql)
@@ -87,6 +87,32 @@ Configure the server using the following environment variables:
    - Pull requests: Read, Write
    - Pipelines: Read (required for pipeline operations)
 4. Copy the generated password and use it as the `BITBUCKET_PASSWORD` environment variable
+
+## Troubleshooting
+
+### 401 Authentication Errors
+
+If you're getting 401 authentication errors, check the following:
+
+1. **Verify your app password**: Make sure you're using an App Password, not your regular Bitbucket password
+2. **Verify app password permissions**: Your app password needs at least "Repositories: Read" permission
+3. **Try the API URL format**: If you're still getting 401 errors, try using the direct API URL format:
+   ```bash
+   BITBUCKET_URL="https://api.bitbucket.org/2.0"
+   ```
+4. **Test API access**: Verify your credentials work by testing the Bitbucket API directly:
+   ```bash
+   # Test with curl (replace with your actual values)
+   curl -u "your-username:your-app-password" \
+     "https://api.bitbucket.org/2.0/repositories/your-workspace"
+   ```
+
+### Getting Help
+
+If you encounter issues:
+
+1. Check the [Bitbucket REST API documentation](https://developer.atlassian.com/cloud/bitbucket/rest/intro/) for API details
+2. Review the [Bitbucket Cloud documentation](https://support.atlassian.com/bitbucket-cloud/) for general help
 
 ## Integration with Cursor
 
@@ -646,4 +672,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [GitHub Repository](https://github.com/MatanYemini/bitbucket-mcp)
 - [npm Package](https://www.npmjs.com/package/bitbucket-mcp)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
-- [Bitbucket REST API - Pull Requests](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/)
+- [Bitbucket REST API Documentation](https://developer.atlassian.com/cloud/bitbucket/rest/intro/)
+- [Bitbucket Cloud Documentation](https://support.atlassian.com/bitbucket-cloud/)
