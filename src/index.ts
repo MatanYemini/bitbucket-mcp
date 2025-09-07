@@ -227,6 +227,7 @@ interface BitbucketConfig {
   token?: string;
   username?: string;
   password?: string;
+  apiToken?: string;
   defaultWorkspace?: string;
 }
 
@@ -359,6 +360,7 @@ class BitbucketServer {
       token: process.env.BITBUCKET_TOKEN,
       username: process.env.BITBUCKET_USERNAME,
       password: process.env.BITBUCKET_PASSWORD,
+      apiToken: process.env.BITBUCKET_API_TOKEN,
       defaultWorkspace: process.env.BITBUCKET_WORKSPACE,
     };
 
@@ -367,9 +369,12 @@ class BitbucketServer {
       throw new Error("BITBUCKET_URL is required");
     }
 
-    if (!this.config.token && !(this.config.username && this.config.password)) {
+    if (
+      !this.config.token &&
+      !(this.config.username && (this.config.apiToken ?? this.config.password))
+    ) {
       throw new Error(
-        "Either BITBUCKET_TOKEN or BITBUCKET_USERNAME/PASSWORD is required"
+        "Either BITBUCKET_TOKEN or BITBUCKET_USERNAME and (BITBUCKET_PASSWORD or BITBUCKET_API_TOKEN) is required"
       );
     }
 
@@ -380,8 +385,11 @@ class BitbucketServer {
         ? { Authorization: `Bearer ${this.config.token}` }
         : { "Content-Type": "application/json" },
       auth:
-        this.config.username && this.config.password
-          ? { username: this.config.username, password: this.config.password }
+        this.config.username && (this.config.apiToken ?? this.config.password)
+          ? {
+              username: this.config.username,
+              password: this.config.apiToken ?? this.config.password,
+            }
           : undefined,
     });
 

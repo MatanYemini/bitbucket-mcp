@@ -11,6 +11,9 @@ startCommand:
       BITBUCKET_TOKEN:
         type: string
         description: "Bitbucket access token for authentication"
+      BITBUCKET_API_TOKEN:
+        type: string
+        description: "Atlassian API token (used as Basic auth password with username)"
       BITBUCKET_USERNAME:
         type: string
         description: "Bitbucket username (used with password authentication)"
@@ -24,6 +27,7 @@ startCommand:
     oneOf:
       - required: ["BITBUCKET_TOKEN"]
       - required: ["BITBUCKET_USERNAME", "BITBUCKET_PASSWORD"]
+      - required: ["BITBUCKET_USERNAME", "BITBUCKET_API_TOKEN"]
   commandFunction: |-
     (config) => {
       // Setup environment variables based on provided config
@@ -38,6 +42,9 @@ startCommand:
       }
       if (config.BITBUCKET_TOKEN) {
         env.BITBUCKET_TOKEN = config.BITBUCKET_TOKEN;
+      }
+      if (config.BITBUCKET_API_TOKEN) {
+        env.BITBUCKET_API_TOKEN = config.BITBUCKET_API_TOKEN;
       }
       if (config.BITBUCKET_USERNAME) {
         env.BITBUCKET_USERNAME = config.BITBUCKET_USERNAME;
