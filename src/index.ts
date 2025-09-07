@@ -387,8 +387,8 @@ class BitbucketServer {
       auth:
         this.config.username && (this.config.apiToken ?? this.config.password)
           ? {
-              username: this.config.username,
-              password: this.config.apiToken ?? this.config.password,
+              username: this.config.username!,
+              password: (this.config.apiToken ?? this.config.password)!,
             }
           : undefined,
     });
