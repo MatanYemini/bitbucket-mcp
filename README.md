@@ -27,10 +27,10 @@ This server implements the Model Context Protocol standard to provide AI assista
 The easiest way to use this MCP server is via NPX, which allows you to run it without installing it globally:
 
 ```bash
-# Run with environment variables
+# Run with environment variables (recommended: API token as password)
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
 BITBUCKET_USERNAME="your-username" \
-BITBUCKET_PASSWORD="your-app-password" \
+BITBUCKET_API_TOKEN="your-atlassian-api-token" \
 npx -y bitbucket-mcp@latest
 ```
 
@@ -49,16 +49,16 @@ npm install bitbucket-mcp
 Then run it with:
 
 ```bash
-# If installed globally
+# If installed globally (recommended)
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
 BITBUCKET_USERNAME="your-username" \
-BITBUCKET_PASSWORD="your-app-password" \
+BITBUCKET_API_TOKEN="your-atlassian-api-token" \
 bitbucket-mcp
 
 # If installed in your project
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
 BITBUCKET_USERNAME="your-username" \
-BITBUCKET_PASSWORD="your-app-password" \
+BITBUCKET_API_TOKEN="your-atlassian-api-token" \
 npx bitbucket-mcp
 ```
 
@@ -73,10 +73,14 @@ Configure the server using the following environment variables:
 | `BITBUCKET_URL`       | Bitbucket base URL (e.g., "https://bitbucket.org/your-workspace") | Yes      |
 | `BITBUCKET_USERNAME`  | Your Bitbucket username                                           | Yes\*    |
 | `BITBUCKET_PASSWORD`  | Your Bitbucket app password                                       | Yes\*    |
-| `BITBUCKET_TOKEN`     | Your Bitbucket access token (alternative to username/password)    | No       |
+| `BITBUCKET_API_TOKEN` | Atlassian API token (used as Basic auth password)                 | Yes\*    |
+| `BITBUCKET_TOKEN`     | Your Bitbucket access token (Bearer)                              | No       |
 | `BITBUCKET_WORKSPACE` | Default workspace to use when not specified                       | No       |
 
-\* Either `BITBUCKET_TOKEN` or both `BITBUCKET_USERNAME` and `BITBUCKET_PASSWORD` must be provided.
+\* Provide one of the following:
+  - `BITBUCKET_TOKEN` (Bearer)
+  - `BITBUCKET_USERNAME` and `BITBUCKET_API_TOKEN` (Basic)
+  - `BITBUCKET_USERNAME` and `BITBUCKET_PASSWORD` (Basic; legacy app password)
 
 ### Creating a Bitbucket App Password
 
@@ -103,9 +107,10 @@ If you're getting 401 authentication errors, check the following:
 4. **Test API access**: Verify your credentials work by testing the Bitbucket API directly:
    ```bash
    # Test with curl (replace with your actual values)
-   curl -u "your-username:your-app-password" \
+   curl -u "your-username:your-atlassian-api-token" \
      "https://api.bitbucket.org/2.0/repositories/your-workspace"
-   ```5. **Atlassian API Key**: Put the Atlassian API Key in the BITBUCKET_PASSWORD variable, not BITBUCKET_TOKEN
+   ```
+5. If using a bearer token, set `BITBUCKET_TOKEN`. If using an Atlassian API token, set `BITBUCKET_API_TOKEN` with `BITBUCKET_USERNAME`.
 
 ### Getting Help
 
