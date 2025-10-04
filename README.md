@@ -3,6 +3,7 @@
 A Model Context Protocol (MCP) server for integrating with Bitbucket Cloud and Server APIs. This MCP server enables AI assistants like Cursor to interact with your Bitbucket repositories, pull requests, and other resources.
 
 ## Safety First
+
 This is a safe and responsible package — no DELETE operations are used, so there's no risk of data loss.
 Every pull request is analyzed with CodeQL to ensure the code remains secure.
 
@@ -12,6 +13,7 @@ Every pull request is analyzed with CodeQL to ensure the code remains secure.
 [![npm version](https://badge.fury.io/js/bitbucket-mcp.svg)](https://www.npmjs.com/package/bitbucket-mcp)
 
 ## Overview
+
 Checkout out the [official npm package](https://www.npmjs.com/package/bitbucket-mcp)
 This server implements the Model Context Protocol standard to provide AI assistants with access to Bitbucket data and operations. It includes tools for:
 
@@ -27,7 +29,14 @@ This server implements the Model Context Protocol standard to provide AI assista
 The easiest way to use this MCP server is via NPX, which allows you to run it without installing it globally:
 
 ```bash
-# Run with environment variables
+# Option A (recommended): API URL + explicit workspace
+BITBUCKET_URL="https://api.bitbucket.org/2.0" \
+BITBUCKET_WORKSPACE="your-workspace" \
+BITBUCKET_USERNAME="your-username" \
+BITBUCKET_PASSWORD="your-app-password" \
+npx -y bitbucket-mcp@latest
+
+# Option B (legacy-compatible): web URL only; workspace is auto-extracted
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
@@ -49,13 +58,27 @@ npm install bitbucket-mcp
 Then run it with:
 
 ```bash
-# If installed globally
+# If installed globally (Option A)
+BITBUCKET_URL="https://api.bitbucket.org/2.0" \
+BITBUCKET_WORKSPACE="your-workspace" \
+BITBUCKET_USERNAME="your-username" \
+BITBUCKET_PASSWORD="your-app-password" \
+bitbucket-mcp
+
+# If installed globally (Option B - legacy-compatible)
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
 bitbucket-mcp
 
-# If installed in your project
+# If installed in your project (Option A)
+BITBUCKET_URL="https://api.bitbucket.org/2.0" \
+BITBUCKET_WORKSPACE="your-workspace" \
+BITBUCKET_USERNAME="your-username" \
+BITBUCKET_PASSWORD="your-app-password" \
+npx bitbucket-mcp
+
+# If installed in your project (Option B - legacy-compatible)
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
@@ -68,13 +91,13 @@ npx bitbucket-mcp
 
 Configure the server using the following environment variables:
 
-| Variable              | Description                                                       | Required |
-| --------------------- | ----------------------------------------------------------------- | -------- |
-| `BITBUCKET_URL`       | Bitbucket base URL (e.g., "https://bitbucket.org/your-workspace") | Yes      |
-| `BITBUCKET_USERNAME`  | Your Bitbucket username                                           | Yes\*    |
-| `BITBUCKET_PASSWORD`  | Your Bitbucket app password                                       | Yes\*    |
-| `BITBUCKET_TOKEN`     | Your Bitbucket access token (alternative to username/password)    | No       |
-| `BITBUCKET_WORKSPACE` | Default workspace to use when not specified                       | No       |
+| Variable              | Description                                                                    | Required |
+| --------------------- | ------------------------------------------------------------------------------ | -------- |
+| `BITBUCKET_URL`       | Bitbucket API base URL. Defaults to `https://api.bitbucket.org/2.0`            | No       |
+| `BITBUCKET_USERNAME`  | Your Bitbucket username                                                        | Yes\*    |
+| `BITBUCKET_PASSWORD`  | Your Bitbucket app password                                                    | Yes\*    |
+| `BITBUCKET_TOKEN`     | Your Bitbucket access token (alternative to username/password)                 | No       |
+| `BITBUCKET_WORKSPACE` | Default workspace to use. If omitted and `BITBUCKET_URL` contains it, auto-set | No       |
 
 \* Either `BITBUCKET_TOKEN` or both `BITBUCKET_USERNAME` and `BITBUCKET_PASSWORD` must be provided.
 
@@ -95,17 +118,22 @@ Configure the server using the following environment variables:
 If you're getting 401 authentication errors, check the following:
 
 1. **Verify your app password**: Make sure you're using an App Password, not your regular Bitbucket password
-2. **Verify app password permissions**: Your app password needs at least "Repositories: Read" permission
-3. **Try the API URL format**: If you're still getting 401 errors, try using the direct API URL format:
-   ```bash
-   BITBUCKET_URL="https://api.bitbucket.org/2.0"
-   ```
-4. **Test API access**: Verify your credentials work by testing the Bitbucket API directly:
-   ```bash
-   # Test with curl (replace with your actual values)
-   curl -u "your-username:your-app-password" \
-     "https://api.bitbucket.org/2.0/repositories/your-workspace"
-   ```5. **Atlassian API Key**: Put the Atlassian API Key in the BITBUCKET_PASSWORD variable, not BITBUCKET_TOKEN
+1. **Verify app password permissions**: Your app password needs at least "Repositories: Read" permission
+1. **Try the API URL format**: If you're still getting 401 errors, try using the direct API URL format:
+
+```bash
+BITBUCKET_URL="https://api.bitbucket.org/2.0"
+```
+
+1. **Test API access**: Verify your credentials work by testing the Bitbucket API directly:
+
+```bash
+# Test with curl (replace with your actual values)
+curl -u "your-username:your-app-password" \
+  "https://api.bitbucket.org/2.0/repositories/your-workspace"
+```
+
+1. **Atlassian API Key**: Put the Atlassian API Key in the `BITBUCKET_PASSWORD` variable, not `BITBUCKET_TOKEN`.
 
 ### Getting Help
 
@@ -127,7 +155,8 @@ To integrate this MCP server with Cursor:
 "bitbucket": {
   "command": "npx",
   "env": {
-    "BITBUCKET_URL": "https://bitbucket.org/your-workspace",
+    "BITBUCKET_URL": "https://api.bitbucket.org/2.0",
+    "BITBUCKET_WORKSPACE": "your-workspace",
     "BITBUCKET_USERNAME": "your-username",
     "BITBUCKET_PASSWORD": "your-app-password"
   },
@@ -135,8 +164,8 @@ To integrate this MCP server with Cursor:
 }
 ```
 
-5. Save the configuration
-6. Use the "/bitbucket" command in Cursor to access Bitbucket repositories and pull requests
+1. Save the configuration
+2. Use the "/bitbucket" command in Cursor to access Bitbucket repositories and pull requests
 
 ### Using a Local Build with Cursor
 
@@ -146,7 +175,8 @@ If you're developing locally and want to test your changes:
 "bitbucket-local": {
   "command": "node",
   "env": {
-    "BITBUCKET_URL": "https://bitbucket.org/your-workspace",
+    "BITBUCKET_URL": "https://api.bitbucket.org/2.0",
+    "BITBUCKET_WORKSPACE": "your-workspace",
     "BITBUCKET_USERNAME": "your-username",
     "BITBUCKET_PASSWORD": "your-app-password"
   },
@@ -367,8 +397,8 @@ The `inline` parameter allows you to create comments on specific lines of code i
 ```json
 {
   "path": "src/file.ts",
-  "to": 15,     // Line number in NEW version (for added/modified lines)
-  "from": 10    // Line number in OLD version (for deleted/modified lines) 
+  "to": 15, // Line number in NEW version (for added/modified lines)
+  "from": 10 // Line number in OLD version (for deleted/modified lines)
 }
 ```
 
@@ -376,19 +406,20 @@ The `inline` parameter allows you to create comments on specific lines of code i
 
 - **General comment**: Omit the `inline` parameter for a general pull request comment
 - **Comment on new line**: Use only `to` parameter
-- **Comment on deleted line**: Use only `from` parameter  
+- **Comment on deleted line**: Use only `from` parameter
 - **Comment on modified line**: Use both `from` and `to` parameters
 
 **Usage:**
+
 ```javascript
 // General comment
-addPullRequestComment(workspace, repo, pr_id, "Great work!")
+addPullRequestComment(workspace, repo, pr_id, "Great work!");
 
 // Inline comment on new line 25
 addPullRequestComment(workspace, repo, pr_id, "Consider error handling here", {
   path: "src/service.ts",
-  to: 25
-})
+  to: 25,
+});
 ```
 
 #### `getPullRequestComment`
