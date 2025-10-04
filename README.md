@@ -24,6 +24,8 @@ This server implements the Model Context Protocol standard to provide AI assista
 
 ## Installation
 
+-- Since it has been asked, in many cases we have seen - "BITBUCKET_USERNAME" is usually your email
+
 ### Using NPX (Recommended)
 
 The easiest way to use this MCP server is via NPX, which allows you to run it without installing it globally:
