@@ -230,6 +230,42 @@ interface BitbucketConfig {
   defaultWorkspace?: string;
 }
 
+// Normalize Bitbucket configuration for backward compatibility and DX
+function normalizeBitbucketConfig(rawConfig: BitbucketConfig): BitbucketConfig {
+  let normalizedConfig = { ...rawConfig };
+  try {
+    const parsed = new URL(rawConfig.baseUrl);
+    const host = parsed.hostname.toLowerCase();
+
+    // If users provide a web URL like https://bitbucket.org/<workspace>,
+    // extract the workspace and switch to the public API base URL
+    if (host === "bitbucket.org" || host === "www.bitbucket.org") {
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      if (!normalizedConfig.defaultWorkspace && segments.length >= 1) {
+        normalizedConfig.defaultWorkspace = segments[0];
+      }
+      normalizedConfig.baseUrl = "https://api.bitbucket.org/2.0";
+    }
+
+    // If users provide https://api.bitbucket.org (without /2.0), ensure /2.0
+    if (host === "api.bitbucket.org") {
+      const pathname = parsed.pathname.replace(/\/+$/, "");
+      if (!pathname.startsWith("/2.0")) {
+        normalizedConfig.baseUrl = "https://api.bitbucket.org/2.0";
+      } else {
+        normalizedConfig.baseUrl = "https://api.bitbucket.org/2.0";
+      }
+    }
+
+    // Remove trailing slashes for a consistent axios baseURL
+    normalizedConfig.baseUrl = normalizedConfig.baseUrl.replace(/\/+$/, "");
+  } catch {
+    // If baseUrl is not a valid absolute URL, keep as-is (custom/self-hosted cases)
+  }
+
+  return normalizedConfig;
+}
+
 /**
  * Represents a Bitbucket pipeline
  */
@@ -280,7 +316,13 @@ interface BitbucketPipelineTrigger {
  */
 interface BitbucketPipelineState {
   type: string;
-  name: "PENDING" | "IN_PROGRESS" | "SUCCESSFUL" | "FAILED" | "ERROR" | "STOPPED";
+  name:
+    | "PENDING"
+    | "IN_PROGRESS"
+    | "SUCCESSFUL"
+    | "FAILED"
+    | "ERROR"
+    | "STOPPED";
   result?: {
     type: string;
     name: "SUCCESSFUL" | "FAILED" | "ERROR" | "STOPPED";
@@ -354,13 +396,28 @@ class BitbucketServer {
     );
 
     // Configuration from environment variables
-    this.config = {
+    const initialConfig: BitbucketConfig = {
       baseUrl: process.env.BITBUCKET_URL ?? "https://api.bitbucket.org/2.0",
       token: process.env.BITBUCKET_TOKEN,
       username: process.env.BITBUCKET_USERNAME,
       password: process.env.BITBUCKET_PASSWORD,
       defaultWorkspace: process.env.BITBUCKET_WORKSPACE,
     };
+
+    const normalizedConfig = normalizeBitbucketConfig(initialConfig);
+
+    if (
+      normalizedConfig.baseUrl !== initialConfig.baseUrl ||
+      normalizedConfig.defaultWorkspace !== initialConfig.defaultWorkspace
+    ) {
+      logger.info("Normalized Bitbucket configuration", {
+        fromBaseUrl: initialConfig.baseUrl,
+        toBaseUrl: normalizedConfig.baseUrl,
+        defaultWorkspace: normalizedConfig.defaultWorkspace,
+      });
+    }
+
+    this.config = normalizedConfig;
 
     // Validate required config
     if (!this.config.baseUrl) {
@@ -412,7 +469,8 @@ class BitbucketServer {
               },
               name: {
                 type: "string",
-                description: "Filter repositories by name (partial match supported)",
+                description:
+                  "Filter repositories by name (partial match supported)",
               },
             },
           },
@@ -723,11 +781,13 @@ class BitbucketServer {
               },
               pending: {
                 type: "boolean",
-                description: "Whether to create this comment as a pending comment (draft state)",
+                description:
+                  "Whether to create this comment as a pending comment (draft state)",
               },
               inline: {
                 type: "object",
-                description: "Inline comment information for commenting on specific lines",
+                description:
+                  "Inline comment information for commenting on specific lines",
                 properties: {
                   path: {
                     type: "string",
@@ -735,11 +795,13 @@ class BitbucketServer {
                   },
                   from: {
                     type: "number",
-                    description: "Line number in the old version of the file (for deleted or modified lines)",
+                    description:
+                      "Line number in the old version of the file (for deleted or modified lines)",
                   },
                   to: {
                     type: "number",
-                    description: "Line number in the new version of the file (for added or modified lines)",
+                    description:
+                      "Line number in the new version of the file (for added or modified lines)",
                   },
                 },
                 required: ["path"],
@@ -750,7 +812,8 @@ class BitbucketServer {
         },
         {
           name: "addPendingPullRequestComment",
-          description: "Add a pending (draft) comment to a pull request that can be published later",
+          description:
+            "Add a pending (draft) comment to a pull request that can be published later",
           inputSchema: {
             type: "object",
             properties: {
@@ -769,7 +832,8 @@ class BitbucketServer {
               },
               inline: {
                 type: "object",
-                description: "Inline comment information for commenting on specific lines",
+                description:
+                  "Inline comment information for commenting on specific lines",
                 properties: {
                   path: {
                     type: "string",
@@ -777,11 +841,13 @@ class BitbucketServer {
                   },
                   from: {
                     type: "number",
-                    description: "Line number in the old version of the file (for deleted or modified lines)",
+                    description:
+                      "Line number in the old version of the file (for deleted or modified lines)",
                   },
                   to: {
                     type: "number",
-                    description: "Line number in the new version of the file (for added or modified lines)",
+                    description:
+                      "Line number in the new version of the file (for added or modified lines)",
                   },
                 },
                 required: ["path"],
@@ -1046,7 +1112,8 @@ class BitbucketServer {
         },
         {
           name: "publishDraftPullRequest",
-          description: "Publish a draft pull request to make it ready for review",
+          description:
+            "Publish a draft pull request to make it ready for review",
           inputSchema: {
             type: "object",
             properties: {
@@ -1084,13 +1151,15 @@ class BitbucketServer {
         },
         {
           name: "getPendingReviewPRs",
-          description: "List all open pull requests in the workspace where the authenticated user is a reviewer and has not yet approved.",
+          description:
+            "List all open pull requests in the workspace where the authenticated user is a reviewer and has not yet approved.",
           inputSchema: {
             type: "object",
             properties: {
               workspace: {
                 type: "string",
-                description: "Bitbucket workspace name (optional, defaults to BITBUCKET_WORKSPACE)",
+                description:
+                  "Bitbucket workspace name (optional, defaults to BITBUCKET_WORKSPACE)",
               },
               limit: {
                 type: "number",
@@ -1121,7 +1190,14 @@ class BitbucketServer {
               },
               status: {
                 type: "string",
-                enum: ["PENDING", "IN_PROGRESS", "SUCCESSFUL", "FAILED", "ERROR", "STOPPED"],
+                enum: [
+                  "PENDING",
+                  "IN_PROGRESS",
+                  "SUCCESSFUL",
+                  "FAILED",
+                  "ERROR",
+                  "STOPPED",
+                ],
                 description: "Filter pipelines by status",
               },
               target_branch: {
@@ -1191,7 +1267,8 @@ class BitbucketServer {
                   },
                   selector_pattern: {
                     type: "string",
-                    description: "Pipeline selector pattern (for custom pipelines)",
+                    description:
+                      "Pipeline selector pattern (for custom pipelines)",
                   },
                 },
                 required: ["ref_type", "ref_name"],
@@ -1503,9 +1580,19 @@ class BitbucketServer {
               args.workspace as string,
               args.repo_slug as string,
               args.limit as number,
-              args.status as "PENDING" | "IN_PROGRESS" | "SUCCESSFUL" | "FAILED" | "ERROR" | "STOPPED",
+              args.status as
+                | "PENDING"
+                | "IN_PROGRESS"
+                | "SUCCESSFUL"
+                | "FAILED"
+                | "ERROR"
+                | "STOPPED",
               args.target_branch as string,
-              args.trigger_type as "manual" | "push" | "pullrequest" | "schedule"
+              args.trigger_type as
+                | "manual"
+                | "push"
+                | "pullrequest"
+                | "schedule"
             );
           case "getPipelineRun":
             return await this.getPipelineRun(
@@ -1567,7 +1654,11 @@ class BitbucketServer {
     });
   }
 
-  async listRepositories(workspace?: string, limit: number = 10, name?: string) {
+  async listRepositories(
+    workspace?: string,
+    limit: number = 10,
+    name?: string
+  ) {
     try {
       // Use default workspace if not provided
       const wsName = workspace || this.config.defaultWorkspace;
@@ -2235,7 +2326,7 @@ class BitbucketServer {
         commentData.inline = {
           path: inline.path,
         };
-        
+
         // Add line number information based on the type
         if (inline.from !== undefined) {
           commentData.inline.from = inline.from;
@@ -2611,7 +2702,9 @@ class BitbucketServer {
       );
 
       const comments = commentsResponse.data.values || [];
-      const pendingComments = comments.filter((comment: any) => comment.pending === true);
+      const pendingComments = comments.filter(
+        (comment: any) => comment.pending === true
+      );
 
       if (pendingComments.length === 0) {
         return {
@@ -2633,7 +2726,7 @@ class BitbucketServer {
             {
               content: comment.content,
               pending: false,
-              ...(comment.inline && { inline: comment.inline })
+              ...(comment.inline && { inline: comment.inline }),
             }
           );
           publishResults.push({
@@ -2654,10 +2747,14 @@ class BitbucketServer {
         content: [
           {
             type: "text",
-            text: JSON.stringify({
-              message: `Published ${pendingComments.length} pending comments`,
-              results: publishResults,
-            }, null, 2),
+            text: JSON.stringify(
+              {
+                message: `Published ${pendingComments.length} pending comments`,
+                results: publishResults,
+              },
+              null,
+              2
+            ),
           },
         ],
       };
@@ -2809,7 +2906,11 @@ class BitbucketServer {
     }
   }
 
-  async getPendingReviewPRs(workspace?: string, limit: number = 50, repositoryList?: string[]) {
+  async getPendingReviewPRs(
+    workspace?: string,
+    limit: number = 50,
+    repositoryList?: string[]
+  ) {
     try {
       const wsName = workspace || this.config.defaultWorkspace;
       if (!wsName) {
@@ -2827,11 +2928,11 @@ class BitbucketServer {
         );
       }
 
-      logger.info("Getting pending review PRs", { 
-        workspace: wsName, 
-        username: currentUserNickname, 
+      logger.info("Getting pending review PRs", {
+        workspace: wsName,
+        username: currentUserNickname,
         repositoryList: repositoryList?.length || "all repositories",
-        limit 
+        limit,
       });
 
       let repositoriesToCheck: string[] = [];
@@ -2839,20 +2940,29 @@ class BitbucketServer {
       if (repositoryList && repositoryList.length > 0) {
         // Use the provided repository list
         repositoriesToCheck = repositoryList;
-        logger.info(`Checking specific repositories: ${repositoryList.join(', ')}`);
+        logger.info(
+          `Checking specific repositories: ${repositoryList.join(", ")}`
+        );
       } else {
         // Get all repositories in the workspace (existing behavior)
         logger.info("Getting all repositories in workspace...");
         const reposResponse = await this.api.get(`/repositories/${wsName}`, {
-          params: { pagelen: 100 }
+          params: { pagelen: 100 },
         });
 
         if (!reposResponse.data.values) {
-          throw new McpError(ErrorCode.InternalError, "Failed to fetch repositories");
+          throw new McpError(
+            ErrorCode.InternalError,
+            "Failed to fetch repositories"
+          );
         }
 
-        repositoriesToCheck = reposResponse.data.values.map((repo: any) => repo.name);
-        logger.info(`Found ${repositoriesToCheck.length} repositories to check`);
+        repositoriesToCheck = reposResponse.data.values.map(
+          (repo: any) => repo.name
+        );
+        logger.info(
+          `Found ${repositoriesToCheck.length} repositories to check`
+        );
       }
 
       const pendingPRs: any[] = [];
@@ -2861,59 +2971,71 @@ class BitbucketServer {
       // Process repositories in batches
       for (let i = 0; i < repositoriesToCheck.length; i += batchSize) {
         const batch = repositoriesToCheck.slice(i, i + batchSize);
-        
+
         // Process batch in parallel
         const batchPromises = batch.map(async (repoSlug) => {
           try {
             logger.info(`Checking repository: ${repoSlug}`);
-            
+
             // Get open PRs for this repository with participants expanded
-            const prsResponse = await this.api.get(`/repositories/${wsName}/${repoSlug}/pullrequests`, {
-              params: { 
-                state: 'OPEN',
-                pagelen: Math.min(limit, 50), // Limit per repo to avoid too much data
-                fields: 'values.id,values.title,values.description,values.state,values.created_on,values.updated_on,values.author,values.source,values.destination,values.participants.user.nickname,values.participants.role,values.participants.approved,values.links'
+            const prsResponse = await this.api.get(
+              `/repositories/${wsName}/${repoSlug}/pullrequests`,
+              {
+                params: {
+                  state: "OPEN",
+                  pagelen: Math.min(limit, 50), // Limit per repo to avoid too much data
+                  fields:
+                    "values.id,values.title,values.description,values.state,values.created_on,values.updated_on,values.author,values.source,values.destination,values.participants.user.nickname,values.participants.role,values.participants.approved,values.links",
+                },
               }
-            });
+            );
 
             if (!prsResponse.data.values) {
               return [];
             }
 
             // Filter PRs where current user is a reviewer and hasn't approved
-            const reposPendingPRs = prsResponse.data.values.filter((pr: any) => {
-              if (!pr.participants || !Array.isArray(pr.participants)) {
-                logger.debug(`PR ${pr.id} has no participants array`);
-                return false;
+            const reposPendingPRs = prsResponse.data.values.filter(
+              (pr: any) => {
+                if (!pr.participants || !Array.isArray(pr.participants)) {
+                  logger.debug(`PR ${pr.id} has no participants array`);
+                  return false;
+                }
+
+                logger.debug(
+                  `PR ${pr.id} participants:`,
+                  pr.participants.map((p: any) => ({
+                    nickname: p.user?.nickname,
+                    role: p.role,
+                    approved: p.approved,
+                  }))
+                );
+
+                // Check if current user is a reviewer who hasn't approved
+                const userParticipant = pr.participants.find(
+                  (participant: any) =>
+                    participant.user?.nickname === currentUserNickname &&
+                    participant.role === "REVIEWER" &&
+                    participant.approved === false
+                );
+
+                logger.debug(
+                  `PR ${pr.id} - User ${currentUserNickname} is pending reviewer:`,
+                  !!userParticipant
+                );
+
+                return !!userParticipant;
               }
-
-              logger.debug(`PR ${pr.id} participants:`, pr.participants.map((p: any) => ({
-                nickname: p.user?.nickname,
-                role: p.role,
-                approved: p.approved
-              })));
-
-              // Check if current user is a reviewer who hasn't approved
-              const userParticipant = pr.participants.find((participant: any) => 
-                participant.user?.nickname === currentUserNickname &&
-                participant.role === 'REVIEWER' &&
-                participant.approved === false
-              );
-
-              logger.debug(`PR ${pr.id} - User ${currentUserNickname} is pending reviewer:`, !!userParticipant);
-              
-              return !!userParticipant;
-            });
+            );
 
             // Add repository info to each PR
             return reposPendingPRs.map((pr: any) => ({
               ...pr,
               repository: {
                 name: repoSlug,
-                full_name: `${wsName}/${repoSlug}`
-              }
+                full_name: `${wsName}/${repoSlug}`,
+              },
             }));
-
           } catch (error) {
             logger.error(`Error checking repository ${repoSlug}:`, error);
             return [];
@@ -2922,11 +3044,11 @@ class BitbucketServer {
 
         // Wait for batch to complete
         const batchResults = await Promise.all(batchPromises);
-        
+
         // Flatten and add to results
         for (const repoPRs of batchResults) {
           pendingPRs.push(...repoPRs);
-          
+
           // Stop if we've reached the limit
           if (pendingPRs.length >= limit) {
             break;
@@ -2942,7 +3064,10 @@ class BitbucketServer {
       // Trim to exact limit and sort by updated date
       const finalResults = pendingPRs
         .slice(0, limit)
-        .sort((a, b) => new Date(b.updated_on).getTime() - new Date(a.updated_on).getTime());
+        .sort(
+          (a, b) =>
+            new Date(b.updated_on).getTime() - new Date(a.updated_on).getTime()
+        );
 
       logger.info(`Found ${finalResults.length} pending review PRs`);
 
@@ -2950,22 +3075,27 @@ class BitbucketServer {
         content: [
           {
             type: "text",
-            text: JSON.stringify({
-              pending_review_prs: finalResults,
-              total_found: finalResults.length,
-              searched_repositories: repositoriesToCheck.length,
-              user: currentUserNickname,
-              workspace: wsName
-            }, null, 2)
-          }
-        ]
+            text: JSON.stringify(
+              {
+                pending_review_prs: finalResults,
+                total_found: finalResults.length,
+                searched_repositories: repositoriesToCheck.length,
+                user: currentUserNickname,
+                workspace: wsName,
+              },
+              null,
+              2
+            ),
+          },
+        ],
       };
-
     } catch (error) {
       logger.error("Error getting pending review PRs:", error);
       throw new McpError(
         ErrorCode.InternalError,
-        `Failed to get pending review PRs: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to get pending review PRs: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
     }
   }
@@ -2976,7 +3106,13 @@ class BitbucketServer {
     workspace: string,
     repo_slug: string,
     limit?: number,
-    status?: "PENDING" | "IN_PROGRESS" | "SUCCESSFUL" | "FAILED" | "ERROR" | "STOPPED",
+    status?:
+      | "PENDING"
+      | "IN_PROGRESS"
+      | "SUCCESSFUL"
+      | "FAILED"
+      | "ERROR"
+      | "STOPPED",
     target_branch?: string,
     trigger_type?: "manual" | "push" | "pullrequest" | "schedule"
   ) {
@@ -3024,7 +3160,11 @@ class BitbucketServer {
     }
   }
 
-  async getPipelineRun(workspace: string, repo_slug: string, pipeline_uuid: string) {
+  async getPipelineRun(
+    workspace: string,
+    repo_slug: string,
+    pipeline_uuid: string
+  ) {
     try {
       logger.info("Getting pipeline run details", {
         workspace,
@@ -3076,7 +3216,9 @@ class BitbucketServer {
 
       // Build the target object based on the input
       const pipelineTarget: Record<string, any> = {
-        type: target.commit_hash ? "pipeline_commit_target" : "pipeline_ref_target",
+        type: target.commit_hash
+          ? "pipeline_commit_target"
+          : "pipeline_ref_target",
         ref_type: target.ref_type,
         ref_name: target.ref_name,
       };
@@ -3139,7 +3281,11 @@ class BitbucketServer {
     }
   }
 
-  async stopPipeline(workspace: string, repo_slug: string, pipeline_uuid: string) {
+  async stopPipeline(
+    workspace: string,
+    repo_slug: string,
+    pipeline_uuid: string
+  ) {
     try {
       logger.info("Stopping pipeline", {
         workspace,
