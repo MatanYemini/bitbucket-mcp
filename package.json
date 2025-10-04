@@ -1,6 +1,6 @@
 {
   "name": "bitbucket-mcp",
-  "version": "5.0.1",
+  "version": "5.0.2",
   "description": "Model Context Protocol (MCP) server for Bitbucket Cloud and Server API integration",
   "type": "module",
   "main": "dist/index.js",
