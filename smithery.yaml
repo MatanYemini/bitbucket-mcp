@@ -24,6 +24,18 @@ startCommand:
       BITBUCKET_ENABLE_DANGEROUS:
         type: string
         description: "Set to true to enable dangerous tools (e.g., deletions)"
+      BITBUCKET_LOG_DISABLE:
+        type: string
+        description: "Disable file logging when set to true/1"
+      BITBUCKET_LOG_FILE:
+        type: string
+        description: "Absolute path to a specific log file"
+      BITBUCKET_LOG_DIR:
+        type: string
+        description: "Directory where logs will be written (default is OS-specific)"
+      BITBUCKET_LOG_PER_CWD:
+        type: string
+        description: "When true, create a per-working-directory subfolder under BITBUCKET_LOG_DIR"
     oneOf:
       - required: ["BITBUCKET_TOKEN"]
       - required: ["BITBUCKET_USERNAME", "BITBUCKET_PASSWORD"]
@@ -53,6 +65,19 @@ startCommand:
       }
       if (config.BITBUCKET_ENABLE_DANGEROUS) {
         env.BITBUCKET_ENABLE_DANGEROUS = config.BITBUCKET_ENABLE_DANGEROUS;
+      }
+      // Logging configuration
+      if (config.BITBUCKET_LOG_DISABLE) {
+        env.BITBUCKET_LOG_DISABLE = config.BITBUCKET_LOG_DISABLE;
+      }
+      if (config.BITBUCKET_LOG_FILE) {
+        env.BITBUCKET_LOG_FILE = config.BITBUCKET_LOG_FILE;
+      }
+      if (config.BITBUCKET_LOG_DIR) {
+        env.BITBUCKET_LOG_DIR = config.BITBUCKET_LOG_DIR;
+      }
+      if (config.BITBUCKET_LOG_PER_CWD) {
+        env.BITBUCKET_LOG_PER_CWD = config.BITBUCKET_LOG_PER_CWD;
       }
       
       return { command: 'node', args: ['dist/index.js'], env };
