@@ -101,8 +101,12 @@ Configure the server using the following environment variables:
 | `BITBUCKET_TOKEN`            | Your Bitbucket access token (alternative to username/password)                 | No       |
 | `BITBUCKET_WORKSPACE`        | Default workspace to use. If omitted and `BITBUCKET_URL` contains it, auto-set | No       |
 | `BITBUCKET_ENABLE_DANGEROUS` | Set to `true` to enable dangerous tools (e.g., deletions). Default: disabled   | No       |
+| `BITBUCKET_LOG_DISABLE`      | Disable file logging when set to `true`/`1`                                    | No       |
+| `BITBUCKET_LOG_FILE`         | Absolute path to a specific log file                                           | No       |
+| `BITBUCKET_LOG_DIR`          | Directory to store logs (defaults to OS-specific app log dir)                  | No       |
+| `BITBUCKET_LOG_PER_CWD`      | When `true`, nest logs under a per-working-directory subfolder                 | No       |
 
-\* Either `BITBUCKET_TOKEN` or both `BITBUCKET_USERNAME` and `BITBUCKET_PASSWORD` must be provided.
+Either `BITBUCKET_TOKEN` or both `BITBUCKET_USERNAME` and `BITBUCKET_PASSWORD` must be provided.
 
 ### Creating a Bitbucket App Password
 
