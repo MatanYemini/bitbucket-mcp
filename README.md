@@ -93,13 +93,14 @@ npx bitbucket-mcp
 
 Configure the server using the following environment variables:
 
-| Variable              | Description                                                                    | Required |
-| --------------------- | ------------------------------------------------------------------------------ | -------- |
-| `BITBUCKET_URL`       | Bitbucket API base URL. Defaults to `https://api.bitbucket.org/2.0`            | No       |
-| `BITBUCKET_USERNAME`  | Your Bitbucket username                                                        | Yes\*    |
-| `BITBUCKET_PASSWORD`  | Your Bitbucket app password                                                    | Yes\*    |
-| `BITBUCKET_TOKEN`     | Your Bitbucket access token (alternative to username/password)                 | No       |
-| `BITBUCKET_WORKSPACE` | Default workspace to use. If omitted and `BITBUCKET_URL` contains it, auto-set | No       |
+| Variable                     | Description                                                                    | Required |
+| ---------------------------- | ------------------------------------------------------------------------------ | -------- |
+| `BITBUCKET_URL`              | Bitbucket API base URL. Defaults to `https://api.bitbucket.org/2.0`            | No       |
+| `BITBUCKET_USERNAME`         | Your Bitbucket username                                                        | Yes\*    |
+| `BITBUCKET_PASSWORD`         | Your Bitbucket app password                                                    | Yes\*    |
+| `BITBUCKET_TOKEN`            | Your Bitbucket access token (alternative to username/password)                 | No       |
+| `BITBUCKET_WORKSPACE`        | Default workspace to use. If omitted and `BITBUCKET_URL` contains it, auto-set | No       |
+| `BITBUCKET_ENABLE_DANGEROUS` | Set to `true` to enable dangerous tools (e.g., deletions). Default: disabled   | No       |
 
 \* Either `BITBUCKET_TOKEN` or both `BITBUCKET_USERNAME` and `BITBUCKET_PASSWORD` must be provided.
 
