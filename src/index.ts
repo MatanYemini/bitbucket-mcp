@@ -228,6 +228,7 @@ interface BitbucketConfig {
   username?: string;
   password?: string;
   defaultWorkspace?: string;
+  allowDangerousCommands?: boolean;
 }
 
 // Normalize Bitbucket configuration for backward compatibility and DX
@@ -380,6 +381,16 @@ class BitbucketServer {
   private readonly server: Server;
   private readonly api: AxiosInstance;
   private readonly config: BitbucketConfig;
+  private readonly dangerousToolNames = new Set<string>([
+    "deletePullRequestComment",
+    "deletePullRequestTask",
+  ]);
+  private isDangerousTool(name: string): boolean {
+    // Explicitly dangerous or conservative prefix match (delete*)
+    if (this.dangerousToolNames.has(name)) return true;
+    if (/^delete/i.test(name)) return true;
+    return false;
+  }
 
   constructor() {
     // Initialize with the older Server class pattern
@@ -417,7 +428,19 @@ class BitbucketServer {
       });
     }
 
-    this.config = normalizedConfig;
+    // Parse dangerous commands toggle (off by default)
+    const enableDangerousEnv = (
+      process.env.BITBUCKET_ENABLE_DANGEROUS ??
+      process.env.BITBUCKET_ALLOW_DANGEROUS ??
+      ""
+    )
+      .toString()
+      .toLowerCase();
+    const allowDangerousCommands = ["1", "true", "yes", "on"].includes(
+      enableDangerousEnv
+    );
+
+    this.config = { ...normalizedConfig, allowDangerousCommands };
 
     // Validate required config
     if (!this.config.baseUrl) {
@@ -1377,7 +1400,312 @@ class BitbucketServer {
             required: ["workspace", "repo_slug", "pipeline_uuid", "step_uuid"],
           },
         },
-      ],
+        {
+          name: "getPullRequestComment",
+          description: "Get a specific comment on a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              comment_id: { type: "string", description: "Comment ID" },
+            },
+            required: [
+              "workspace",
+              "repo_slug",
+              "pull_request_id",
+              "comment_id",
+            ],
+          },
+        },
+        {
+          name: "updatePullRequestComment",
+          description: "Update a comment on a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              comment_id: { type: "string", description: "Comment ID" },
+              content: {
+                type: "string",
+                description: "Updated comment content",
+              },
+            },
+            required: [
+              "workspace",
+              "repo_slug",
+              "pull_request_id",
+              "comment_id",
+              "content",
+            ],
+          },
+        },
+        {
+          name: "deletePullRequestComment",
+          description: "Delete a comment on a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              comment_id: { type: "string", description: "Comment ID" },
+            },
+            required: [
+              "workspace",
+              "repo_slug",
+              "pull_request_id",
+              "comment_id",
+            ],
+          },
+        },
+        {
+          name: "resolveComment",
+          description: "Resolve a comment thread on a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              comment_id: { type: "string", description: "Comment ID" },
+            },
+            required: [
+              "workspace",
+              "repo_slug",
+              "pull_request_id",
+              "comment_id",
+            ],
+          },
+        },
+        {
+          name: "reopenComment",
+          description: "Reopen a resolved comment thread on a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              comment_id: { type: "string", description: "Comment ID" },
+            },
+            required: [
+              "workspace",
+              "repo_slug",
+              "pull_request_id",
+              "comment_id",
+            ],
+          },
+        },
+        {
+          name: "getPullRequestDiffStat",
+          description: "Get diff statistics for a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+            },
+            required: ["workspace", "repo_slug", "pull_request_id"],
+          },
+        },
+        {
+          name: "getPullRequestPatch",
+          description: "Get patch for a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+            },
+            required: ["workspace", "repo_slug", "pull_request_id"],
+          },
+        },
+        {
+          name: "getPullRequestTasks",
+          description: "List tasks on a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+            },
+            required: ["workspace", "repo_slug", "pull_request_id"],
+          },
+        },
+        {
+          name: "createPullRequestTask",
+          description: "Create a task on a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              content: { type: "string", description: "Task content" },
+              comment: {
+                type: "number",
+                description: "Optional comment ID to attach the task",
+              },
+              state: {
+                type: "string",
+                enum: ["OPEN", "RESOLVED"],
+                description: "Initial task state",
+              },
+            },
+            required: ["workspace", "repo_slug", "pull_request_id", "content"],
+          },
+        },
+        {
+          name: "getPullRequestTask",
+          description: "Get a specific task on a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              task_id: { type: "string", description: "Task ID" },
+            },
+            required: ["workspace", "repo_slug", "pull_request_id", "task_id"],
+          },
+        },
+        {
+          name: "updatePullRequestTask",
+          description: "Update a task on a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              task_id: { type: "string", description: "Task ID" },
+              content: { type: "string", description: "Updated task content" },
+              state: {
+                type: "string",
+                enum: ["OPEN", "RESOLVED"],
+                description: "Updated task state",
+              },
+            },
+            required: ["workspace", "repo_slug", "pull_request_id", "task_id"],
+          },
+        },
+        {
+          name: "deletePullRequestTask",
+          description: "Delete a task from a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              task_id: { type: "string", description: "Task ID" },
+            },
+            required: ["workspace", "repo_slug", "pull_request_id", "task_id"],
+          },
+        },
+        {
+          name: "getPullRequestStatuses",
+          description: "List commit statuses associated with a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+            },
+            required: ["workspace", "repo_slug", "pull_request_id"],
+          },
+        },
+      ].filter(
+        (tool) =>
+          this.config.allowDangerousCommands === true ||
+          !this.isDangerousTool(tool.name)
+      ),
     }));
 
     // Register the call tool handler
@@ -1387,6 +1715,18 @@ class BitbucketServer {
           arguments: request.params.arguments,
         });
         const args = request.params.arguments ?? {};
+        const toolName = request.params.name;
+
+        // Guard dangerous tools when not enabled
+        if (
+          this.isDangerousTool(toolName) &&
+          this.config.allowDangerousCommands !== true
+        ) {
+          throw new McpError(
+            ErrorCode.MethodNotFound,
+            `Tool ${toolName} is disabled. Set BITBUCKET_ENABLE_DANGEROUS=true to enable.`
+          );
+        }
 
         switch (request.params.name) {
           case "listRepositories":
@@ -1632,6 +1972,100 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pipeline_uuid as string,
               args.step_uuid as string
+            );
+          case "getPullRequestComment":
+            return await this.getPullRequestComment(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.comment_id as string
+            );
+          case "updatePullRequestComment":
+            return await this.updatePullRequestComment(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.comment_id as string,
+              args.content as string
+            );
+          case "deletePullRequestComment":
+            return await this.deletePullRequestComment(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.comment_id as string
+            );
+          case "resolveComment":
+            return await this.setCommentResolved(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.comment_id as string,
+              true
+            );
+          case "reopenComment":
+            return await this.setCommentResolved(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.comment_id as string,
+              false
+            );
+          case "getPullRequestDiffStat":
+            return await this.getPullRequestDiffStat(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string
+            );
+          case "getPullRequestPatch":
+            return await this.getPullRequestPatch(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string
+            );
+          case "getPullRequestTasks":
+            return await this.getPullRequestTasks(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string
+            );
+          case "createPullRequestTask":
+            return await this.createPullRequestTask(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.content as string,
+              args.comment as number,
+              args.state as "OPEN" | "RESOLVED"
+            );
+          case "getPullRequestTask":
+            return await this.getPullRequestTask(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.task_id as string
+            );
+          case "updatePullRequestTask":
+            return await this.updatePullRequestTask(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.task_id as string,
+              args.content as string | undefined,
+              args.state as ("OPEN" | "RESOLVED") | undefined
+            );
+          case "deletePullRequestTask":
+            return await this.deletePullRequestTask(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.task_id as string
+            );
+          case "getPullRequestStatuses":
+            return await this.getPullRequestStatuses(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string
             );
           default:
             throw new McpError(
@@ -3294,7 +3728,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.post(
-        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/stopPipeline`
+        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/stop`
       );
 
       return {
@@ -3445,6 +3879,492 @@ class BitbucketServer {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to get pipeline step logs: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async getPullRequestComment(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    comment_id: string
+  ) {
+    try {
+      logger.info("Getting pull request comment", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+        comment_id,
+      });
+
+      const response = await this.api.get(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments/${comment_id}`
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error getting pull request comment", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+        comment_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get pull request comment: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async updatePullRequestComment(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    comment_id: string,
+    content: string
+  ) {
+    try {
+      logger.info("Updating pull request comment", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+        comment_id,
+      });
+
+      const response = await this.api.put(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments/${comment_id}`,
+        {
+          content: { raw: content },
+        }
+      );
+
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(response.data, null, 2) },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error updating pull request comment", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+        comment_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to update pull request comment: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async deletePullRequestComment(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    comment_id: string
+  ) {
+    try {
+      logger.info("Deleting pull request comment", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+        comment_id,
+      });
+
+      await this.api.delete(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments/${comment_id}`
+      );
+
+      return {
+        content: [{ type: "text", text: "Comment deleted successfully." }],
+      };
+    } catch (error) {
+      logger.error("Error deleting pull request comment", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+        comment_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to delete pull request comment: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async setCommentResolved(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    comment_id: string,
+    resolved: boolean
+  ) {
+    try {
+      logger.info("Setting comment resolved state", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+        comment_id,
+        resolved,
+      });
+
+      const response = await this.api.put(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments/${comment_id}`,
+        {
+          resolved,
+        }
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error setting comment resolved state", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+        comment_id,
+        resolved,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to update comment resolved state: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async getPullRequestDiffStat(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string
+  ) {
+    try {
+      logger.info("Getting pull request diffstat", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+
+      const response = await this.api.get(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/diffstat`
+      );
+
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(response.data.values, null, 2) },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error getting pull request diffstat", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get pull request diffstat: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async getPullRequestPatch(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string
+  ) {
+    try {
+      logger.info("Getting pull request patch", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+
+      const response = await this.api.get(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/patch`,
+        {
+          headers: { Accept: "text/plain" },
+          responseType: "text",
+          maxRedirects: 5,
+        }
+      );
+
+      return { content: [{ type: "text", text: response.data }] };
+    } catch (error) {
+      logger.error("Error getting pull request patch", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get pull request patch: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async getPullRequestTasks(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string
+  ) {
+    try {
+      logger.info("Getting pull request tasks", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+
+      const response = await this.api.get(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/tasks`
+      );
+
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(response.data.values, null, 2) },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error getting pull request tasks", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get pull request tasks: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async createPullRequestTask(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    content: string,
+    commentId?: number,
+    state?: "OPEN" | "RESOLVED"
+  ) {
+    try {
+      logger.info("Creating pull request task", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+
+      const data: Record<string, any> = { content };
+      if (commentId) data.comment = { id: commentId };
+      if (state) data.state = state;
+
+      const response = await this.api.post(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/tasks`,
+        data
+      );
+
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(response.data, null, 2) },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error creating pull request task", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to create pull request task: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async getPullRequestTask(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    task_id: string
+  ) {
+    try {
+      logger.info("Getting pull request task", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+        task_id,
+      });
+
+      const response = await this.api.get(`/tasks/${task_id}`);
+
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(response.data, null, 2) },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error getting pull request task", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+        task_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get pull request task: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async updatePullRequestTask(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    task_id: string,
+    content?: string,
+    state?: "OPEN" | "RESOLVED"
+  ) {
+    try {
+      logger.info("Updating pull request task", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+        task_id,
+      });
+
+      const data: Record<string, any> = {};
+      if (content !== undefined) data.content = content;
+      if (state !== undefined) data.state = state;
+
+      const response = await this.api.put(`/tasks/${task_id}`, data);
+
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(response.data, null, 2) },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error updating pull request task", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+        task_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to update pull request task: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async deletePullRequestTask(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    task_id: string
+  ) {
+    try {
+      logger.info("Deleting pull request task", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+        task_id,
+      });
+
+      await this.api.delete(`/tasks/${task_id}`);
+
+      return {
+        content: [{ type: "text", text: "Task deleted successfully." }],
+      };
+    } catch (error) {
+      logger.error("Error deleting pull request task", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+        task_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to delete pull request task: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async getPullRequestStatuses(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string
+  ) {
+    try {
+      logger.info("Getting pull request statuses", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+
+      const response = await this.api.get(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/statuses`
+      );
+
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(response.data, null, 2) },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error getting pull request statuses", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get pull request statuses: ${
           error instanceof Error ? error.message : String(error)
         }`
       );

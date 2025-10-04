@@ -21,6 +21,9 @@ startCommand:
       BITBUCKET_WORKSPACE:
         type: string
         description: "Default Bitbucket workspace to use when not specified"
+      BITBUCKET_ENABLE_DANGEROUS:
+        type: string
+        description: "Set to true to enable dangerous tools (e.g., deletions)"
     oneOf:
       - required: ["BITBUCKET_TOKEN"]
       - required: ["BITBUCKET_USERNAME", "BITBUCKET_PASSWORD"]
@@ -47,6 +50,9 @@ startCommand:
       }
       if (config.BITBUCKET_WORKSPACE) {
         env.BITBUCKET_WORKSPACE = config.BITBUCKET_WORKSPACE;
+      }
+      if (config.BITBUCKET_ENABLE_DANGEROUS) {
+        env.BITBUCKET_ENABLE_DANGEROUS = config.BITBUCKET_ENABLE_DANGEROUS;
       }
       
       return { command: 'node', args: ['dist/index.js'], env };
