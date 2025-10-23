@@ -1458,6 +1458,33 @@ class BitbucketServer {
                 type: "string",
                 description: "Step UUID",
               },
+              max_lines: {
+                type: "number",
+                description:
+                  "Maximum number of log lines to return (default 500)",
+                minimum: 1,
+                maximum: 5000,
+              },
+              tail: {
+                type: "boolean",
+                description:
+                  "When true, returns the most recent lines instead of the first lines",
+              },
+              errors_only: {
+                type: "boolean",
+                description:
+                  "When true, only include lines that look like errors (case-insensitive match on error keywords)",
+              },
+              search_term: {
+                type: "string",
+                description:
+                  "Optional case-insensitive search term to filter log lines",
+              },
+              save_to_file: {
+                type: "boolean",
+                description:
+                  "Save the full log to a temporary file and return the path for offline review",
+              },
             },
             required: ["workspace", "repo_slug", "pipeline_uuid", "step_uuid"],
           },
@@ -2033,7 +2060,12 @@ class BitbucketServer {
               args.workspace as string,
               args.repo_slug as string,
               args.pipeline_uuid as string,
-              args.step_uuid as string
+              args.step_uuid as string,
+              args.max_lines as number | undefined,
+              args.tail as boolean | undefined,
+              args.errors_only as boolean | undefined,
+              args.search_term as string | undefined,
+              args.save_to_file as boolean | undefined
             );
           case "getPullRequestComment":
             return await this.getPullRequestComment(
@@ -3904,7 +3936,12 @@ class BitbucketServer {
     workspace: string,
     repo_slug: string,
     pipeline_uuid: string,
-    step_uuid: string
+    step_uuid: string,
+    maxLines?: number,
+    tail?: boolean,
+    errorsOnly?: boolean,
+    searchTerm?: string,
+    saveToFile?: boolean
   ) {
     try {
       logger.info("Getting pipeline step logs", {
@@ -3912,6 +3949,11 @@ class BitbucketServer {
         repo_slug,
         pipeline_uuid,
         step_uuid,
+        maxLines,
+        tail,
+        errorsOnly,
+        searchTerm,
+        saveToFile,
       });
 
       const response = await this.api.get(
@@ -3922,11 +3964,98 @@ class BitbucketServer {
         }
       );
 
+      const rawLog =
+        typeof response.data === "string"
+          ? response.data
+          : response.data === undefined || response.data === null
+            ? ""
+            : String(response.data);
+      const allLines = rawLog.length > 0 ? rawLog.split(/\r?\n/) : [];
+      const totalLines = allLines.length;
+
+      let filteredLines = allLines;
+      const normalizedSearch = searchTerm?.trim().toLowerCase();
+      if (errorsOnly) {
+        const errorRegex = /(error|failed|failure|exception|traceback|fatal)/i;
+        filteredLines = filteredLines.filter((line) => errorRegex.test(line));
+      }
+      if (normalizedSearch && normalizedSearch.length > 0) {
+        filteredLines = filteredLines.filter((line) =>
+          line.toLowerCase().includes(normalizedSearch)
+        );
+      }
+
+      const defaultMaxLines = 500;
+      const normalizedMaxLines =
+        typeof maxLines === "number" && Number.isFinite(maxLines)
+          ? Math.floor(maxLines)
+          : defaultMaxLines;
+      const resolvedMaxLines = Math.max(
+        1,
+        Math.min(normalizedMaxLines, 5000)
+      );
+
+      const hasLines = filteredLines.length > 0;
+      const limitedLines = hasLines
+        ? tail
+          ? filteredLines.slice(-resolvedMaxLines)
+          : filteredLines.slice(0, resolvedMaxLines)
+        : [];
+      const wasTruncated = hasLines && filteredLines.length > limitedLines.length;
+
+      const summaryParts: string[] = [
+        `Total log lines: ${totalLines}.`,
+      ];
+      if (errorsOnly || (normalizedSearch && normalizedSearch.length > 0)) {
+        summaryParts.push(`Lines after filtering: ${filteredLines.length}.`);
+      }
+      if (!hasLines) {
+        summaryParts.push("No log lines matched the provided filters.");
+      } else {
+        summaryParts.push(
+          `Showing ${limitedLines.length} ${tail ? "most recent" : "earliest"} lines${
+            wasTruncated ? ` (limited to ${resolvedMaxLines} lines)` : ""
+          }.`
+        );
+      }
+
+      if (saveToFile) {
+        try {
+          const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bitbucket-mcp-"));
+          const safeFileName = `pipeline-${pipeline_uuid}-step-${step_uuid}.log`.replace(
+            /[^a-zA-Z0-9._-]/g,
+            "_"
+          );
+          const filePath = path.join(tempDir, safeFileName);
+          fs.writeFileSync(filePath, rawLog, "utf8");
+          summaryParts.push(`Full log saved to: ${filePath}`);
+        } catch (fileError) {
+          logger.warn("Failed to save pipeline step log to file", {
+            error: fileError,
+          });
+          summaryParts.push(
+            "Attempted to save the full log to a temporary file, but writing failed."
+          );
+        }
+      }
+
+      if (!saveToFile && wasTruncated) {
+        summaryParts.push(
+          "Use max_lines, tail, search_term, or save_to_file to refine or download the full log."
+        );
+      }
+
+      const summary = summaryParts.join(" ");
+
+      const textContent = hasLines
+        ? `${summary}\n\n${limitedLines.join("\n")}`
+        : summary;
+
       return {
         content: [
           {
             type: "text",
-            text: response.data,
+            text: textContent,
           },
         ],
       };
