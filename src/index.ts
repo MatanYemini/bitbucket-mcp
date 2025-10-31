@@ -2066,7 +2066,7 @@ class BitbucketServer {
               args.description as string,
               args.sourceBranch as string,
               args.targetBranch as string,
-              args.reviewers as string[]
+              args.reviewers
             );
           case "publishDraftPullRequest":
             return await this.publishDraftPullRequest(
