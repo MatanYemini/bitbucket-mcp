@@ -240,7 +240,7 @@ Creates a new pull request.
 - `description`: Pull request description
 - `sourceBranch`: Source branch name
 - `targetBranch`: Target branch name
-- `reviewers` (optional): List of reviewer usernames
+- `reviewers` (optional): List of reviewer UUID strings (for example: `{065f4456-270d-4eac-954c-0dafe42542ca}`)
 - `draft` (optional): Whether to create the pull request as a draft
 
 #### `getPullRequest`
@@ -349,7 +349,7 @@ Creates a new draft pull request.
 - `description`: Pull request description
 - `sourceBranch`: Source branch name
 - `targetBranch`: Target branch name
-- `reviewers` (optional): List of reviewer usernames
+- `reviewers` (optional): List of reviewer UUID strings (for example: `{065f4456-270d-4eac-954c-0dafe42542ca}`)
 
 **Note:** This is equivalent to calling `createPullRequest` with `draft: true`.
 

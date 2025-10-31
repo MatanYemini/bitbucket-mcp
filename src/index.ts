@@ -626,7 +626,8 @@ class BitbucketServer {
               reviewers: {
                 type: "array",
                 items: { type: "string" },
-                description: "List of reviewer usernames",
+                description:
+                  'List of reviewer UUID strings (for example: "{065f4456-270d-4eac-954c-0dafe42542ca}")',
               },
               draft: {
                 type: "boolean",
@@ -1182,7 +1183,8 @@ class BitbucketServer {
               reviewers: {
                 type: "array",
                 items: { type: "string" },
-                description: "List of reviewer usernames",
+                description:
+                  'List of reviewer UUID strings (for example: "{065f4456-270d-4eac-954c-0dafe42542ca}")',
               },
             },
             required: [
@@ -2332,10 +2334,10 @@ class BitbucketServer {
         targetBranch,
       });
 
-      // Prepare reviewers format if provided
+      // Prepare reviewers payload using UUID objects, matching Bitbucket API format
       const reviewersArray =
-        reviewers?.map((username) => ({
-          username,
+        reviewers?.map((reviewerUuid) => ({
+          uuid: reviewerUuid,
         })) || [];
 
       // Create the pull request
