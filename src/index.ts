@@ -683,6 +683,12 @@ class BitbucketServer {
                 type: "string",
                 description: "New pull request description",
               },
+              reviewers: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  'List of reviewer UUID strings (for example: "{065f4456-270d-4eac-954c-0dafe42542ca}")',
+              },
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
           },
@@ -1861,7 +1867,8 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.title as string,
-              args.description as string
+              args.description as string,
+              args.reviewers as string[]
             );
           case "getPullRequestActivity":
             return await this.getPullRequestActivity(
@@ -2430,7 +2437,8 @@ class BitbucketServer {
     repo_slug: string,
     pull_request_id: string,
     title?: string,
-    description?: string
+    description?: string,
+    reviewers?: string[]
   ) {
     try {
       logger.info("Updating Bitbucket pull request", {
@@ -2443,6 +2451,11 @@ class BitbucketServer {
       const updateData: Record<string, any> = {};
       if (title !== undefined) updateData.title = title;
       if (description !== undefined) updateData.description = description;
+      if (reviewers !== undefined) {
+        updateData.reviewers = reviewers.map((reviewerUuid) => ({
+          uuid: reviewerUuid,
+        }));
+      }
 
       const response = await this.api.put(
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`,

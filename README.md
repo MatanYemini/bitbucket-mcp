@@ -240,7 +240,7 @@ Creates a new pull request.
 - `description`: Pull request description
 - `sourceBranch`: Source branch name
 - `targetBranch`: Target branch name
-- `reviewers` (optional): List of reviewer UUID strings (for example: `{065f4456-270d-4eac-954c-0dafe42542ca}`)
+- `reviewers` (optional): List of reviewer UUID strings (include the surrounding braces as returned by Bitbucket, for example `{065f4456-270d-4eac-954c-0dafe42542ca}`)
 - `draft` (optional): Whether to create the pull request as a draft
 
 #### `getPullRequest`
@@ -262,7 +262,9 @@ Updates a pull request.
 - `workspace`: Bitbucket workspace name
 - `repo_slug`: Repository slug
 - `pull_request_id`: Pull request ID
-- Various optional update parameters (title, description, etc.)
+- `title` (optional): New pull request title
+- `description` (optional): New pull request description
+- `reviewers` (optional): List of reviewer UUID strings (include the surrounding braces as returned by Bitbucket, for example `{065f4456-270d-4eac-954c-0dafe42542ca}`)
 
 #### `getPullRequestActivity`
 
