@@ -447,6 +447,79 @@ class BitbucketServer {
     "deletePullRequestComment",
     "deletePullRequestTask",
   ]);
+
+  private normalizeReviewerInput(
+    reviewers: unknown
+  ): { uuid: string }[] | undefined {
+    if (reviewers === undefined || reviewers === null) {
+      return undefined;
+    }
+
+    const coerceToArray = (input: unknown): unknown[] => {
+      if (input === undefined || input === null) return [];
+      if (Array.isArray(input)) return input;
+      if (typeof input === "string") {
+        const trimmed = input.trim();
+        if (trimmed.length === 0) return [];
+
+        // Attempt to parse JSON strings (either a single object or an array)
+        if (
+          (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+          (trimmed.startsWith("{") && trimmed.endsWith("}"))
+        ) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            return Array.isArray(parsed) ? parsed : [parsed];
+          } catch {
+            // fall back to comma/newline split if not valid JSON
+          }
+        }
+
+        return trimmed
+          .split(/[,\n]/)
+          .map((token) => token.trim())
+          .filter((token) => token.length > 0);
+      }
+
+      return [input];
+    };
+
+    const rawEntries = coerceToArray(reviewers);
+    const normalized: { uuid: string }[] = [];
+
+    for (const entry of rawEntries) {
+      if (entry === undefined || entry === null) {
+        continue;
+      }
+
+      if (typeof entry === "string") {
+        const trimmed = entry.trim();
+        if (trimmed.length === 0) {
+          continue;
+        }
+        normalized.push({ uuid: trimmed });
+        continue;
+      }
+
+      if (typeof entry === "object") {
+        const maybeUuid = (entry as { uuid?: unknown }).uuid;
+        if (typeof maybeUuid === "string" && maybeUuid.trim().length > 0) {
+          normalized.push({ uuid: maybeUuid.trim() });
+          continue;
+        }
+      }
+
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Invalid reviewer entry: ${JSON.stringify(entry)}. ` +
+          'Provide reviewer UUID strings like "{065f4456-270d-4eac-954c-0dafe42542ca}" ' +
+          "or objects with a uuid field."
+      );
+    }
+
+    return normalized;
+  }
+
   private isDangerousTool(name: string): boolean {
     // Explicitly dangerous or conservative prefix match (delete*)
     if (this.dangerousToolNames.has(name)) return true;
@@ -626,7 +699,8 @@ class BitbucketServer {
               reviewers: {
                 type: "array",
                 items: { type: "string" },
-                description: "List of reviewer usernames",
+                description:
+                  'List of reviewer UUID strings (for example: "{065f4456-270d-4eac-954c-0dafe42542ca}")',
               },
               draft: {
                 type: "boolean",
@@ -681,6 +755,12 @@ class BitbucketServer {
               description: {
                 type: "string",
                 description: "New pull request description",
+              },
+              reviewers: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  'List of reviewer UUID strings (for example: "{065f4456-270d-4eac-954c-0dafe42542ca}")',
               },
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
@@ -1182,7 +1262,8 @@ class BitbucketServer {
               reviewers: {
                 type: "array",
                 items: { type: "string" },
-                description: "List of reviewer usernames",
+                description:
+                  'List of reviewer UUID strings (for example: "{065f4456-270d-4eac-954c-0dafe42542ca}")',
               },
             },
             required: [
@@ -1844,7 +1925,7 @@ class BitbucketServer {
               args.description as string,
               args.sourceBranch as string,
               args.targetBranch as string,
-              args.reviewers as string[],
+              args.reviewers,
               args.draft as boolean
             );
           case "getPullRequest":
@@ -1859,7 +1940,8 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.title as string,
-              args.description as string
+              args.description as string,
+              args.reviewers
             );
           case "getPullRequestActivity":
             return await this.getPullRequestActivity(
@@ -1984,7 +2066,7 @@ class BitbucketServer {
               args.description as string,
               args.sourceBranch as string,
               args.targetBranch as string,
-              args.reviewers as string[]
+              args.reviewers
             );
           case "publishDraftPullRequest":
             return await this.publishDraftPullRequest(
@@ -2320,7 +2402,7 @@ class BitbucketServer {
     description: string,
     sourceBranch: string,
     targetBranch: string,
-    reviewers?: string[],
+    reviewers?: unknown,
     draft?: boolean
   ) {
     try {
@@ -2332,32 +2414,33 @@ class BitbucketServer {
         targetBranch,
       });
 
-      // Prepare reviewers format if provided
-      const reviewersArray =
-        reviewers?.map((username) => ({
-          username,
-        })) || [];
+      const reviewersPayload = this.normalizeReviewerInput(reviewers);
+
+      const requestBody: Record<string, unknown> = {
+        title,
+        description,
+        source: {
+          branch: {
+            name: sourceBranch,
+          },
+        },
+        destination: {
+          branch: {
+            name: targetBranch,
+          },
+        },
+        close_source_branch: true,
+        draft: draft === true, // Only set draft=true if explicitly specified
+      };
+
+      if (reviewersPayload !== undefined) {
+        requestBody.reviewers = reviewersPayload;
+      }
 
       // Create the pull request
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pullrequests`,
-        {
-          title,
-          description,
-          source: {
-            branch: {
-              name: sourceBranch,
-            },
-          },
-          destination: {
-            branch: {
-              name: targetBranch,
-            },
-          },
-          reviewers: reviewersArray,
-          close_source_branch: true,
-          draft: draft === true, // Only set draft=true if explicitly specified
-        }
+        requestBody
       );
 
       return {
@@ -2428,7 +2511,8 @@ class BitbucketServer {
     repo_slug: string,
     pull_request_id: string,
     title?: string,
-    description?: string
+    description?: string,
+    reviewers?: unknown
   ) {
     try {
       logger.info("Updating Bitbucket pull request", {
@@ -2441,6 +2525,10 @@ class BitbucketServer {
       const updateData: Record<string, any> = {};
       if (title !== undefined) updateData.title = title;
       if (description !== undefined) updateData.description = description;
+      const reviewersPayload = this.normalizeReviewerInput(reviewers);
+      if (reviewersPayload !== undefined) {
+        updateData.reviewers = reviewersPayload;
+      }
 
       const response = await this.api.put(
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`,
@@ -3309,7 +3397,7 @@ class BitbucketServer {
     description: string,
     sourceBranch: string,
     targetBranch: string,
-    reviewers?: string[]
+    reviewers?: unknown
   ) {
     try {
       logger.info("Creating draft Bitbucket pull request", {
