@@ -240,7 +240,7 @@ Creates a new pull request.
 - `description`: Pull request description
 - `sourceBranch`: Source branch name
 - `targetBranch`: Target branch name
-- `reviewers` (optional): List of reviewer UUID strings (include the surrounding braces as returned by Bitbucket, for example `{065f4456-270d-4eac-954c-0dafe42542ca}`)
+- `reviewers` (optional): List of reviewer UUID strings (include the surrounding braces as returned by Bitbucket, for example `{065f4456-270d-4eac-954c-0dafe42542ca}`). You can provide the UUIDs as plain strings, comma-separated strings, or JSON arrays—this server reshapes them into the Bitbucket `{ uuid: "<value>" }` payload automatically.
 - `draft` (optional): Whether to create the pull request as a draft
 
 #### `getPullRequest`
@@ -264,7 +264,7 @@ Updates a pull request.
 - `pull_request_id`: Pull request ID
 - `title` (optional): New pull request title
 - `description` (optional): New pull request description
-- `reviewers` (optional): List of reviewer UUID strings (include the surrounding braces as returned by Bitbucket, for example `{065f4456-270d-4eac-954c-0dafe42542ca}`)
+- `reviewers` (optional): List of reviewer UUID strings (include the surrounding braces as returned by Bitbucket, for example `{065f4456-270d-4eac-954c-0dafe42542ca}`). Pass UUID strings in whichever of the supported string/array forms is most convenient—the server converts them into `{ uuid: "<value>" }` objects for the Bitbucket API.
 
 #### `getPullRequestActivity`
 
@@ -351,7 +351,7 @@ Creates a new draft pull request.
 - `description`: Pull request description
 - `sourceBranch`: Source branch name
 - `targetBranch`: Target branch name
-- `reviewers` (optional): List of reviewer UUID strings (for example: `{065f4456-270d-4eac-954c-0dafe42542ca}`)
+- `reviewers` (optional): List of reviewer UUID strings (for example: `{065f4456-270d-4eac-954c-0dafe42542ca}`). Plain strings, comma-separated strings, or JSON arrays are all accepted; they are normalized to Bitbucket’s reviewer object format on your behalf.
 
 **Note:** This is equivalent to calling `createPullRequest` with `draft: true`.
 
