@@ -240,7 +240,7 @@ Creates a new pull request.
 - `description`: Pull request description
 - `sourceBranch`: Source branch name
 - `targetBranch`: Target branch name
-- `reviewers` (optional): List of reviewer usernames
+- `reviewers` (optional): List of reviewer UUID strings (include the surrounding braces as returned by Bitbucket, for example `{065f4456-270d-4eac-954c-0dafe42542ca}`). You can provide the UUIDs as plain strings, comma-separated strings, or JSON arrays—this server reshapes them into the Bitbucket `{ uuid: "<value>" }` payload automatically.
 - `draft` (optional): Whether to create the pull request as a draft
 
 #### `getPullRequest`
@@ -262,7 +262,9 @@ Updates a pull request.
 - `workspace`: Bitbucket workspace name
 - `repo_slug`: Repository slug
 - `pull_request_id`: Pull request ID
-- Various optional update parameters (title, description, etc.)
+- `title` (optional): New pull request title
+- `description` (optional): New pull request description
+- `reviewers` (optional): List of reviewer UUID strings (include the surrounding braces as returned by Bitbucket, for example `{065f4456-270d-4eac-954c-0dafe42542ca}`). Pass UUID strings in whichever of the supported string/array forms is most convenient—the server converts them into `{ uuid: "<value>" }` objects for the Bitbucket API.
 
 #### `getPullRequestActivity`
 
@@ -349,7 +351,7 @@ Creates a new draft pull request.
 - `description`: Pull request description
 - `sourceBranch`: Source branch name
 - `targetBranch`: Target branch name
-- `reviewers` (optional): List of reviewer usernames
+- `reviewers` (optional): List of reviewer UUID strings (for example: `{065f4456-270d-4eac-954c-0dafe42542ca}`). Plain strings, comma-separated strings, or JSON arrays are all accepted; they are normalized to Bitbucket’s reviewer object format on your behalf.
 
 **Note:** This is equivalent to calling `createPullRequest` with `draft: true`.
 
@@ -676,6 +678,56 @@ Gets logs for a specific pipeline step.
 - `repo_slug`: Repository slug
 - `pipeline_uuid`: Pipeline UUID
 - `step_uuid`: Step UUID
+
+#### `getPipelineStepTestCases`
+
+Lists test cases for a specific pipeline step (Bitbucket Pipelines test reports).
+
+Reference curl:
+
+```
+curl --request GET \
+  --url "https://api.bitbucket.org/2.0/repositories/{workspace}/{repo_slug}/pipelines/{pipeline_uuid}/steps/{step_uuid}/test_reports/test_cases" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+MCP tool parameters:
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pipeline_uuid`: Pipeline UUID
+- `step_uuid`: Step UUID
+- `page` (optional): Page number for Bitbucket pagination.
+- `pagelen` (optional): Items per page (Bitbucket supports up to 1000 on this endpoint).
+- `limit` (optional): Overall maximum number of test cases to return when accumulating pages.
+- `accumulate` (optional): When `true`, follows `next` links and accumulates results up to `limit` (or all pages if `limit` omitted).
+
+Returns JSON with `meta` and `cases`:
+
+```json
+{
+  "meta": {
+    "accumulated": true,
+    "returned": 120,
+    "limit": 200,
+    "page": 1,
+    "pagelen": 100,
+    "has_more": false
+  },
+  "cases": [
+    { "name": "…", "status": "PASSED", "duration": 12.3, "reason": null, "output": null }
+  ]
+}
+```
+
+Each case contains:
+
+- `name`: test case name
+- `status`: test status (e.g., PASSED/FAILED/SKIPPED)
+- `duration`: duration as provided by Bitbucket (ms/seconds)
+- `reason`: failure message or reason (if any)
+- `output`: captured output/backtrace when available
+- `file`: file path provided by Bitbucket when available
 
 ## Development
 

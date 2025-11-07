@@ -438,6 +438,18 @@ interface BitbucketPipelineCommand {
   command: string;
 }
 
+/**
+ * Represents a Bitbucket pipeline test case (simplified projection)
+ */
+interface BitbucketPipelineTestCaseSimplified {
+  name?: string;
+  status?: string;
+  duration?: number | string;
+  reason?: string;
+  output?: string;
+  file?: string;
+}
+
 // =========== MCP SERVER ===========
 class BitbucketServer {
   private readonly server: Server;
@@ -447,6 +459,80 @@ class BitbucketServer {
     "deletePullRequestComment",
     "deletePullRequestTask",
   ]);
+
+
+  private normalizeReviewerInput(
+    reviewers: unknown
+  ): { uuid: string }[] | undefined {
+    if (reviewers === undefined || reviewers === null) {
+      return undefined;
+    }
+
+    const coerceToArray = (input: unknown): unknown[] => {
+      if (input === undefined || input === null) return [];
+      if (Array.isArray(input)) return input;
+      if (typeof input === "string") {
+        const trimmed = input.trim();
+        if (trimmed.length === 0) return [];
+
+        // Attempt to parse JSON strings (either a single object or an array)
+        if (
+          (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+          (trimmed.startsWith("{") && trimmed.endsWith("}"))
+        ) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            return Array.isArray(parsed) ? parsed : [parsed];
+          } catch {
+            // fall back to comma/newline split if not valid JSON
+          }
+        }
+
+        return trimmed
+          .split(/[,\n]/)
+          .map((token) => token.trim())
+          .filter((token) => token.length > 0);
+      }
+
+      return [input];
+    };
+
+    const rawEntries = coerceToArray(reviewers);
+    const normalized: { uuid: string }[] = [];
+
+    for (const entry of rawEntries) {
+      if (entry === undefined || entry === null) {
+        continue;
+      }
+
+      if (typeof entry === "string") {
+        const trimmed = entry.trim();
+        if (trimmed.length === 0) {
+          continue;
+        }
+        normalized.push({ uuid: trimmed });
+        continue;
+      }
+
+      if (typeof entry === "object") {
+        const maybeUuid = (entry as { uuid?: unknown }).uuid;
+        if (typeof maybeUuid === "string" && maybeUuid.trim().length > 0) {
+          normalized.push({ uuid: maybeUuid.trim() });
+          continue;
+        }
+      }
+
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Invalid reviewer entry: ${JSON.stringify(entry)}. ` +
+          'Provide reviewer UUID strings like "{065f4456-270d-4eac-954c-0dafe42542ca}" ' +
+          "or objects with a uuid field."
+      );
+    }
+
+    return normalized;
+  }
+
   private isDangerousTool(name: string): boolean {
     // Explicitly dangerous or conservative prefix match (delete*)
     if (this.dangerousToolNames.has(name)) return true;
@@ -626,7 +712,8 @@ class BitbucketServer {
               reviewers: {
                 type: "array",
                 items: { type: "string" },
-                description: "List of reviewer usernames",
+                description:
+                  'List of reviewer UUID strings (for example: "{065f4456-270d-4eac-954c-0dafe42542ca}")',
               },
               draft: {
                 type: "boolean",
@@ -681,6 +768,12 @@ class BitbucketServer {
               description: {
                 type: "string",
                 description: "New pull request description",
+              },
+              reviewers: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  'List of reviewer UUID strings (for example: "{065f4456-270d-4eac-954c-0dafe42542ca}")',
               },
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
@@ -1182,7 +1275,8 @@ class BitbucketServer {
               reviewers: {
                 type: "array",
                 items: { type: "string" },
-                description: "List of reviewer usernames",
+                description:
+                  'List of reviewer UUID strings (for example: "{065f4456-270d-4eac-954c-0dafe42542ca}")',
               },
             },
             required: [
@@ -1484,6 +1578,46 @@ class BitbucketServer {
                 type: "boolean",
                 description:
                   "Save the full log to a temporary file and return the path for offline review",
+              },
+            },
+            required: ["workspace", "repo_slug", "pipeline_uuid", "step_uuid"],
+          },
+        },
+        {
+          name: "getPipelineStepTestCases",
+          description:
+            "List test cases for a specific pipeline step (Bitbucket Pipelines test reports)",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pipeline_uuid: {
+                type: "string",
+                description: "Pipeline UUID",
+              },
+              step_uuid: { type: "string", description: "Step UUID" },
+              page: {
+                type: "number",
+                description: "Optional page number (Bitbucket pagination)",
+              },
+              pagelen: {
+                type: "number",
+                description:
+                  "Optional page length (items per page). Bitbucket allows up to 1000 on some endpoints.",
+              },
+              limit: {
+                type: "number",
+                description:
+                  "Optional overall max number of test cases to return when accumulating pages.",
+              },
+              accumulate: {
+                type: "boolean",
+                description:
+                  "When true, follows 'next' links to accumulate across pages until 'limit' is reached or pages end.",
               },
             },
             required: ["workspace", "repo_slug", "pipeline_uuid", "step_uuid"],
@@ -1844,7 +1978,7 @@ class BitbucketServer {
               args.description as string,
               args.sourceBranch as string,
               args.targetBranch as string,
-              args.reviewers as string[],
+              args.reviewers,
               args.draft as boolean
             );
           case "getPullRequest":
@@ -1859,7 +1993,8 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.title as string,
-              args.description as string
+              args.description as string,
+              args.reviewers
             );
           case "getPullRequestActivity":
             return await this.getPullRequestActivity(
@@ -1984,7 +2119,7 @@ class BitbucketServer {
               args.description as string,
               args.sourceBranch as string,
               args.targetBranch as string,
-              args.reviewers as string[]
+              args.reviewers
             );
           case "publishDraftPullRequest":
             return await this.publishDraftPullRequest(
@@ -2066,6 +2201,17 @@ class BitbucketServer {
               args.errors_only as boolean | undefined,
               args.search_term as string | undefined,
               args.save_to_file as boolean | undefined
+            );
+          case "getPipelineStepTestCases":
+            return await this.getPipelineStepTestCases(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pipeline_uuid as string,
+              args.step_uuid as string,
+              args.page as number | undefined,
+              args.pagelen as number | undefined,
+              args.limit as number | undefined,
+              args.accumulate as boolean | undefined
             );
           case "getPullRequestComment":
             return await this.getPullRequestComment(
@@ -2320,7 +2466,7 @@ class BitbucketServer {
     description: string,
     sourceBranch: string,
     targetBranch: string,
-    reviewers?: string[],
+    reviewers?: unknown,
     draft?: boolean
   ) {
     try {
@@ -2332,32 +2478,33 @@ class BitbucketServer {
         targetBranch,
       });
 
-      // Prepare reviewers format if provided
-      const reviewersArray =
-        reviewers?.map((username) => ({
-          username,
-        })) || [];
+      const reviewersPayload = this.normalizeReviewerInput(reviewers);
+
+      const requestBody: Record<string, unknown> = {
+        title,
+        description,
+        source: {
+          branch: {
+            name: sourceBranch,
+          },
+        },
+        destination: {
+          branch: {
+            name: targetBranch,
+          },
+        },
+        close_source_branch: true,
+        draft: draft === true, // Only set draft=true if explicitly specified
+      };
+
+      if (reviewersPayload !== undefined) {
+        requestBody.reviewers = reviewersPayload;
+      }
 
       // Create the pull request
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pullrequests`,
-        {
-          title,
-          description,
-          source: {
-            branch: {
-              name: sourceBranch,
-            },
-          },
-          destination: {
-            branch: {
-              name: targetBranch,
-            },
-          },
-          reviewers: reviewersArray,
-          close_source_branch: true,
-          draft: draft === true, // Only set draft=true if explicitly specified
-        }
+        requestBody
       );
 
       return {
@@ -2428,7 +2575,8 @@ class BitbucketServer {
     repo_slug: string,
     pull_request_id: string,
     title?: string,
-    description?: string
+    description?: string,
+    reviewers?: unknown
   ) {
     try {
       logger.info("Updating Bitbucket pull request", {
@@ -2441,6 +2589,10 @@ class BitbucketServer {
       const updateData: Record<string, any> = {};
       if (title !== undefined) updateData.title = title;
       if (description !== undefined) updateData.description = description;
+      const reviewersPayload = this.normalizeReviewerInput(reviewers);
+      if (reviewersPayload !== undefined) {
+        updateData.reviewers = reviewersPayload;
+      }
 
       const response = await this.api.put(
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`,
@@ -3309,7 +3461,7 @@ class BitbucketServer {
     description: string,
     sourceBranch: string,
     targetBranch: string,
-    reviewers?: string[]
+    reviewers?: unknown
   ) {
     try {
       logger.info("Creating draft Bitbucket pull request", {
@@ -4070,6 +4222,154 @@ class BitbucketServer {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to get pipeline step logs: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async getPipelineStepTestCases(
+    workspace: string,
+    repo_slug: string,
+    pipeline_uuid: string,
+    step_uuid: string,
+    page?: number,
+    pagelen?: number,
+    limit?: number,
+    accumulate?: boolean
+  ) {
+    try {
+      logger.info("Getting pipeline step test cases", {
+        workspace,
+        repo_slug,
+        pipeline_uuid,
+        step_uuid,
+        page,
+        pagelen,
+        limit,
+        accumulate,
+      });
+
+      const client = this.api;
+      const makePath = () =>
+        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/steps/${step_uuid}/test_reports/test_cases`;
+
+      const toSimplified = (values: any[]): BitbucketPipelineTestCaseSimplified[] =>
+        values.map((tc: any) => {
+          const name =
+            tc?.name ?? tc?.test_case?.name ?? tc?.test?.name ?? tc?.title ?? undefined;
+          const status = tc?.status ?? tc?.result?.status ?? tc?.outcome;
+          const duration =
+            tc?.duration ?? tc?.duration_in_ms ?? tc?.time ?? tc?.duration_in_seconds;
+          const reason =
+            tc?.failure?.message ?? tc?.message ?? tc?.reason ??
+            (tc?.failure && typeof tc.failure === "string" ? tc.failure : undefined);
+          const output =
+            tc?.failure?.backtrace ?? tc?.output ?? tc?.stdout ?? tc?.stderr ?? undefined;
+          const file =
+            tc?.file ??
+            tc?.filepath ??
+            tc?.path ??
+            tc?.location ??
+            tc?.test_case?.file ??
+            tc?.test_case?.path ??
+            tc?.test?.file ??
+            tc?.test?.path ??
+            undefined;
+          return { name, status, duration, reason, output, file };
+        });
+
+      const params: Record<string, any> = {};
+      if (typeof page === "number" && isFinite(page)) params.page = page;
+      if (typeof pagelen === "number" && isFinite(pagelen)) params.pagelen = pagelen;
+
+      const doAccumulate = accumulate === true || (typeof limit === "number" && limit > 0);
+      const collected: BitbucketPipelineTestCaseSimplified[] = [];
+
+      // Fetch first page
+      let url: string | undefined = makePath();
+      let next: string | undefined = undefined;
+      do {
+        const resp: any = await client.get(url!, { params });
+        const pageValues: any[] = Array.isArray(resp.data?.values) ? resp.data.values : [];
+        const mapped = toSimplified(pageValues);
+        if (doAccumulate) {
+          collected.push(...mapped);
+          if (typeof limit === "number" && limit > 0 && collected.length >= limit) {
+            break;
+          }
+        } else {
+          // Single page mode: return immediately
+          return {
+            content: [{ type: "text", text: JSON.stringify(mapped, null, 2) }],
+          };
+        }
+
+        next = typeof resp.data?.next === "string" ? resp.data.next : undefined;
+        url = next; // absolute URL ok for axios
+        // Clear params when following 'next' since URL already encodes them
+        if (next) {
+          delete (params as any).page;
+          delete (params as any).pagelen;
+        }
+      } while (doAccumulate && next);
+
+      const sliced = typeof limit === "number" && limit > 0 ? collected.slice(0, limit) : collected;
+      const meta = {
+        accumulated: doAccumulate,
+        returned: sliced.length,
+        limit: limit ?? null,
+        page: page ?? null,
+        pagelen: pagelen ?? null,
+        has_more: Boolean(next),
+      };
+
+      return {
+        content: [
+          { type: "text", text: JSON.stringify({ meta, cases: sliced }, null, 2) },
+        ],
+      };
+    } catch (error) {
+      // Structured error for HTTP failures, else fallback to generic MCP error
+      if (axios.isAxiosError(error) && error.response) {
+        const status = error.response.status;
+        const message =
+          (error.response.data && (error.response.data.message || error.response.data.error)) ||
+          (error as AxiosError).message ||
+          `HTTP ${status}`;
+        logger.warn("Bitbucket API returned error for test cases", {
+          status,
+          message,
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: {
+                    status,
+                    message,
+                    data: error.response.data ?? null,
+                  },
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+      logger.error("Error getting pipeline step test cases", {
+        error,
+        workspace,
+        repo_slug,
+        pipeline_uuid,
+        step_uuid,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get pipeline step test cases: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
