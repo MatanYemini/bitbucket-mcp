@@ -698,8 +698,30 @@ MCP tool parameters:
 - `pipeline_uuid`: Pipeline UUID
 - `step_uuid`: Step UUID
 - `token_alias` (optional): If provided, the server uses the env var `BITBUCKET_TOKEN_<ALIAS>` for this request. Example: `token_alias="prod"` uses `BITBUCKET_TOKEN_PROD`.
+- `page` (optional): Page number for Bitbucket pagination.
+- `pagelen` (optional): Items per page (Bitbucket supports up to 1000 on this endpoint).
+- `limit` (optional): Overall maximum number of test cases to return when accumulating pages.
+- `accumulate` (optional): When `true`, follows `next` links and accumulates results up to `limit` (or all pages if `limit` omitted).
 
-Returns a simplified JSON array of objects with:
+Returns JSON with `meta` and `cases`:
+
+```json
+{
+  "meta": {
+    "accumulated": true,
+    "returned": 120,
+    "limit": 200,
+    "page": 1,
+    "pagelen": 100,
+    "has_more": false
+  },
+  "cases": [
+    { "name": "…", "status": "PASSED", "duration": 12.3, "reason": null, "output": null }
+  ]
+}
+```
+
+Each case contains:
 
 - `name`: test case name
 - `status`: test status (e.g., PASSED/FAILED/SKIPPED)

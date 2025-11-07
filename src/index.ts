@@ -1620,6 +1620,25 @@ class BitbucketServer {
                 description:
                   "Optional token alias; uses env BITBUCKET_TOKEN_<ALIAS> if provided",
               },
+              page: {
+                type: "number",
+                description: "Optional page number (Bitbucket pagination)",
+              },
+              pagelen: {
+                type: "number",
+                description:
+                  "Optional page length (items per page). Bitbucket allows up to 1000 on some endpoints.",
+              },
+              limit: {
+                type: "number",
+                description:
+                  "Optional overall max number of test cases to return when accumulating pages.",
+              },
+              accumulate: {
+                type: "boolean",
+                description:
+                  "When true, follows 'next' links to accumulate across pages until 'limit' is reached or pages end.",
+              },
             },
             required: ["workspace", "repo_slug", "pipeline_uuid", "step_uuid"],
           },
@@ -2209,7 +2228,11 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pipeline_uuid as string,
               args.step_uuid as string,
-              args.token_alias as string | undefined
+              args.token_alias as string | undefined,
+              args.page as number | undefined,
+              args.pagelen as number | undefined,
+              args.limit as number | undefined,
+              args.accumulate as boolean | undefined
             );
           case "getPullRequestComment":
             return await this.getPullRequestComment(
@@ -4231,7 +4254,11 @@ class BitbucketServer {
     repo_slug: string,
     pipeline_uuid: string,
     step_uuid: string,
-    token_alias?: string
+    token_alias?: string,
+    page?: number,
+    pagelen?: number,
+    limit?: number,
+    accumulate?: boolean
   ) {
     try {
       logger.info("Getting pipeline step test cases", {
@@ -4240,46 +4267,79 @@ class BitbucketServer {
         pipeline_uuid,
         step_uuid,
         token_alias,
+        page,
+        pagelen,
+        limit,
+        accumulate,
       });
 
       const client = this.apiForTokenAlias(token_alias);
-      const response = await client.get(
-        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/steps/${step_uuid}/test_reports/test_cases`
-      );
+      const makePath = () =>
+        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/steps/${step_uuid}/test_reports/test_cases`;
 
-      const rawValues: any[] = Array.isArray(response.data?.values)
-        ? response.data.values
-        : [];
-
-      const simplified: BitbucketPipelineTestCaseSimplified[] = rawValues.map(
-        (tc: any) => {
+      const toSimplified = (values: any[]): BitbucketPipelineTestCaseSimplified[] =>
+        values.map((tc: any) => {
           const name =
-            tc?.name ??
-            tc?.test_case?.name ??
-            tc?.test?.name ??
-            tc?.title ??
-            undefined;
+            tc?.name ?? tc?.test_case?.name ?? tc?.test?.name ?? tc?.title ?? undefined;
           const status = tc?.status ?? tc?.result?.status ?? tc?.outcome;
           const duration =
             tc?.duration ?? tc?.duration_in_ms ?? tc?.time ?? tc?.duration_in_seconds;
           const reason =
-            tc?.failure?.message ??
-            tc?.message ??
-            tc?.reason ??
+            tc?.failure?.message ?? tc?.message ?? tc?.reason ??
             (tc?.failure && typeof tc.failure === "string" ? tc.failure : undefined);
           const output =
-            tc?.failure?.backtrace ??
-            tc?.output ??
-            tc?.stdout ??
-            tc?.stderr ??
-            undefined;
+            tc?.failure?.backtrace ?? tc?.output ?? tc?.stdout ?? tc?.stderr ?? undefined;
           return { name, status, duration, reason, output };
+        });
+
+      const params: Record<string, any> = {};
+      if (typeof page === "number" && isFinite(page)) params.page = page;
+      if (typeof pagelen === "number" && isFinite(pagelen)) params.pagelen = pagelen;
+
+      const doAccumulate = accumulate === true || (typeof limit === "number" && limit > 0);
+      const collected: BitbucketPipelineTestCaseSimplified[] = [];
+
+      // Fetch first page
+      let url: string | undefined = makePath();
+      let next: string | undefined = undefined;
+      do {
+        const resp: any = await client.get(url!, { params });
+        const pageValues: any[] = Array.isArray(resp.data?.values) ? resp.data.values : [];
+        const mapped = toSimplified(pageValues);
+        if (doAccumulate) {
+          collected.push(...mapped);
+          if (typeof limit === "number" && limit > 0 && collected.length >= limit) {
+            break;
+          }
+        } else {
+          // Single page mode: return immediately
+          return {
+            content: [{ type: "text", text: JSON.stringify(mapped, null, 2) }],
+          };
         }
-      );
+
+        next = typeof resp.data?.next === "string" ? resp.data.next : undefined;
+        url = next; // absolute URL ok for axios
+        // Clear params when following 'next' since URL already encodes them
+        if (next) {
+          delete (params as any).page;
+          delete (params as any).pagelen;
+        }
+      } while (doAccumulate && next);
+
+      const sliced = typeof limit === "number" && limit > 0 ? collected.slice(0, limit) : collected;
+      const meta = {
+        accumulated: doAccumulate,
+        returned: sliced.length,
+        limit: limit ?? null,
+        page: page ?? null,
+        pagelen: pagelen ?? null,
+        has_more: Boolean(next),
+      };
 
       return {
         content: [
-          { type: "text", text: JSON.stringify(simplified, null, 2) },
+          { type: "text", text: JSON.stringify({ meta, cases: sliced }, null, 2) },
         ],
       };
     } catch (error) {
