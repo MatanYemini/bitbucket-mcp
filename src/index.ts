@@ -438,6 +438,18 @@ interface BitbucketPipelineCommand {
   command: string;
 }
 
+/**
+ * Represents a Bitbucket pipeline test case (simplified projection)
+ */
+interface BitbucketPipelineTestCaseSimplified {
+  name?: string;
+  status?: string;
+  duration?: number | string;
+  reason?: string;
+  output?: string;
+  file?: string;
+}
+
 // =========== MCP SERVER ===========
 class BitbucketServer {
   private readonly server: Server;
@@ -447,6 +459,7 @@ class BitbucketServer {
     "deletePullRequestComment",
     "deletePullRequestTask",
   ]);
+
 
   private normalizeReviewerInput(
     reviewers: unknown
@@ -1571,6 +1584,46 @@ class BitbucketServer {
           },
         },
         {
+          name: "getPipelineStepTestCases",
+          description:
+            "List test cases for a specific pipeline step (Bitbucket Pipelines test reports)",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pipeline_uuid: {
+                type: "string",
+                description: "Pipeline UUID",
+              },
+              step_uuid: { type: "string", description: "Step UUID" },
+              page: {
+                type: "number",
+                description: "Optional page number (Bitbucket pagination)",
+              },
+              pagelen: {
+                type: "number",
+                description:
+                  "Optional page length (items per page). Bitbucket allows up to 1000 on some endpoints.",
+              },
+              limit: {
+                type: "number",
+                description:
+                  "Optional overall max number of test cases to return when accumulating pages.",
+              },
+              accumulate: {
+                type: "boolean",
+                description:
+                  "When true, follows 'next' links to accumulate across pages until 'limit' is reached or pages end.",
+              },
+            },
+            required: ["workspace", "repo_slug", "pipeline_uuid", "step_uuid"],
+          },
+        },
+        {
           name: "getPullRequestComment",
           description: "Get a specific comment on a pull request",
           inputSchema: {
@@ -2148,6 +2201,17 @@ class BitbucketServer {
               args.errors_only as boolean | undefined,
               args.search_term as string | undefined,
               args.save_to_file as boolean | undefined
+            );
+          case "getPipelineStepTestCases":
+            return await this.getPipelineStepTestCases(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pipeline_uuid as string,
+              args.step_uuid as string,
+              args.page as number | undefined,
+              args.pagelen as number | undefined,
+              args.limit as number | undefined,
+              args.accumulate as boolean | undefined
             );
           case "getPullRequestComment":
             return await this.getPullRequestComment(
@@ -4158,6 +4222,154 @@ class BitbucketServer {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to get pipeline step logs: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async getPipelineStepTestCases(
+    workspace: string,
+    repo_slug: string,
+    pipeline_uuid: string,
+    step_uuid: string,
+    page?: number,
+    pagelen?: number,
+    limit?: number,
+    accumulate?: boolean
+  ) {
+    try {
+      logger.info("Getting pipeline step test cases", {
+        workspace,
+        repo_slug,
+        pipeline_uuid,
+        step_uuid,
+        page,
+        pagelen,
+        limit,
+        accumulate,
+      });
+
+      const client = this.api;
+      const makePath = () =>
+        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/steps/${step_uuid}/test_reports/test_cases`;
+
+      const toSimplified = (values: any[]): BitbucketPipelineTestCaseSimplified[] =>
+        values.map((tc: any) => {
+          const name =
+            tc?.name ?? tc?.test_case?.name ?? tc?.test?.name ?? tc?.title ?? undefined;
+          const status = tc?.status ?? tc?.result?.status ?? tc?.outcome;
+          const duration =
+            tc?.duration ?? tc?.duration_in_ms ?? tc?.time ?? tc?.duration_in_seconds;
+          const reason =
+            tc?.failure?.message ?? tc?.message ?? tc?.reason ??
+            (tc?.failure && typeof tc.failure === "string" ? tc.failure : undefined);
+          const output =
+            tc?.failure?.backtrace ?? tc?.output ?? tc?.stdout ?? tc?.stderr ?? undefined;
+          const file =
+            tc?.file ??
+            tc?.filepath ??
+            tc?.path ??
+            tc?.location ??
+            tc?.test_case?.file ??
+            tc?.test_case?.path ??
+            tc?.test?.file ??
+            tc?.test?.path ??
+            undefined;
+          return { name, status, duration, reason, output, file };
+        });
+
+      const params: Record<string, any> = {};
+      if (typeof page === "number" && isFinite(page)) params.page = page;
+      if (typeof pagelen === "number" && isFinite(pagelen)) params.pagelen = pagelen;
+
+      const doAccumulate = accumulate === true || (typeof limit === "number" && limit > 0);
+      const collected: BitbucketPipelineTestCaseSimplified[] = [];
+
+      // Fetch first page
+      let url: string | undefined = makePath();
+      let next: string | undefined = undefined;
+      do {
+        const resp: any = await client.get(url!, { params });
+        const pageValues: any[] = Array.isArray(resp.data?.values) ? resp.data.values : [];
+        const mapped = toSimplified(pageValues);
+        if (doAccumulate) {
+          collected.push(...mapped);
+          if (typeof limit === "number" && limit > 0 && collected.length >= limit) {
+            break;
+          }
+        } else {
+          // Single page mode: return immediately
+          return {
+            content: [{ type: "text", text: JSON.stringify(mapped, null, 2) }],
+          };
+        }
+
+        next = typeof resp.data?.next === "string" ? resp.data.next : undefined;
+        url = next; // absolute URL ok for axios
+        // Clear params when following 'next' since URL already encodes them
+        if (next) {
+          delete (params as any).page;
+          delete (params as any).pagelen;
+        }
+      } while (doAccumulate && next);
+
+      const sliced = typeof limit === "number" && limit > 0 ? collected.slice(0, limit) : collected;
+      const meta = {
+        accumulated: doAccumulate,
+        returned: sliced.length,
+        limit: limit ?? null,
+        page: page ?? null,
+        pagelen: pagelen ?? null,
+        has_more: Boolean(next),
+      };
+
+      return {
+        content: [
+          { type: "text", text: JSON.stringify({ meta, cases: sliced }, null, 2) },
+        ],
+      };
+    } catch (error) {
+      // Structured error for HTTP failures, else fallback to generic MCP error
+      if (axios.isAxiosError(error) && error.response) {
+        const status = error.response.status;
+        const message =
+          (error.response.data && (error.response.data.message || error.response.data.error)) ||
+          (error as AxiosError).message ||
+          `HTTP ${status}`;
+        logger.warn("Bitbucket API returned error for test cases", {
+          status,
+          message,
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: {
+                    status,
+                    message,
+                    data: error.response.data ?? null,
+                  },
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+      logger.error("Error getting pipeline step test cases", {
+        error,
+        workspace,
+        repo_slug,
+        pipeline_uuid,
+        step_uuid,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get pipeline step test cases: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
