@@ -697,7 +697,6 @@ MCP tool parameters:
 - `repo_slug`: Repository slug
 - `pipeline_uuid`: Pipeline UUID
 - `step_uuid`: Step UUID
-- `token_alias` (optional): If provided, the server uses the env var `BITBUCKET_TOKEN_<ALIAS>` for this request. Example: `token_alias="prod"` uses `BITBUCKET_TOKEN_PROD`.
 - `page` (optional): Page number for Bitbucket pagination.
 - `pagelen` (optional): Items per page (Bitbucket supports up to 1000 on this endpoint).
 - `limit` (optional): Overall maximum number of test cases to return when accumulating pages.

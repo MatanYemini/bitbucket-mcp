@@ -460,22 +460,6 @@ class BitbucketServer {
     "deletePullRequestTask",
   ]);
 
-  // Resolve an axios client, optionally using a token alias from env (BITBUCKET_TOKEN_<ALIAS>)
-  private apiForTokenAlias(token_alias?: string): AxiosInstance {
-    const alias = (token_alias ?? "").trim();
-    if (!alias) return this.api;
-    const envKey = `BITBUCKET_TOKEN_${alias.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}`;
-    const token = process.env[envKey];
-    if (!token) {
-      // Fall back to default API but note via logs
-      logger.warn("Token alias not found; using default token", { envKey });
-      return this.api;
-    }
-    return axios.create({
-      baseURL: this.config.baseUrl,
-      headers: { Authorization: `Bearer ${token}` },
-    });
-  }
 
   private normalizeReviewerInput(
     reviewers: unknown
@@ -1616,11 +1600,6 @@ class BitbucketServer {
                 description: "Pipeline UUID",
               },
               step_uuid: { type: "string", description: "Step UUID" },
-              token_alias: {
-                type: "string",
-                description:
-                  "Optional token alias; uses env BITBUCKET_TOKEN_<ALIAS> if provided",
-              },
               page: {
                 type: "number",
                 description: "Optional page number (Bitbucket pagination)",
@@ -2229,7 +2208,6 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pipeline_uuid as string,
               args.step_uuid as string,
-              args.token_alias as string | undefined,
               args.page as number | undefined,
               args.pagelen as number | undefined,
               args.limit as number | undefined,
@@ -4255,7 +4233,6 @@ class BitbucketServer {
     repo_slug: string,
     pipeline_uuid: string,
     step_uuid: string,
-    token_alias?: string,
     page?: number,
     pagelen?: number,
     limit?: number,
@@ -4267,14 +4244,13 @@ class BitbucketServer {
         repo_slug,
         pipeline_uuid,
         step_uuid,
-        token_alias,
         page,
         pagelen,
         limit,
         accumulate,
       });
 
-      const client = this.apiForTokenAlias(token_alias);
+      const client = this.api;
       const makePath = () =>
         `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/steps/${step_uuid}/test_reports/test_cases`;
 
@@ -4390,7 +4366,6 @@ class BitbucketServer {
         repo_slug,
         pipeline_uuid,
         step_uuid,
-        token_alias,
       });
       throw new McpError(
         ErrorCode.InternalError,
