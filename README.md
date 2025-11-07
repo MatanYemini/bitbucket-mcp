@@ -728,6 +728,7 @@ Each case contains:
 - `duration`: duration as provided by Bitbucket (ms/seconds)
 - `reason`: failure message or reason (if any)
 - `output`: captured output/backtrace when available
+- `file`: file path provided by Bitbucket when available
 
 ## Development
 

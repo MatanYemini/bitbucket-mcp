@@ -447,6 +447,7 @@ interface BitbucketPipelineTestCaseSimplified {
   duration?: number | string;
   reason?: string;
   output?: string;
+  file?: string;
 }
 
 // =========== MCP SERVER ===========
@@ -4289,7 +4290,17 @@ class BitbucketServer {
             (tc?.failure && typeof tc.failure === "string" ? tc.failure : undefined);
           const output =
             tc?.failure?.backtrace ?? tc?.output ?? tc?.stdout ?? tc?.stderr ?? undefined;
-          return { name, status, duration, reason, output };
+          const file =
+            tc?.file ??
+            tc?.filepath ??
+            tc?.path ??
+            tc?.location ??
+            tc?.test_case?.file ??
+            tc?.test_case?.path ??
+            tc?.test?.file ??
+            tc?.test?.path ??
+            undefined;
+          return { name, status, duration, reason, output, file };
         });
 
       const params: Record<string, any> = {};
