@@ -438,6 +438,17 @@ interface BitbucketPipelineCommand {
   command: string;
 }
 
+/**
+ * Represents a Bitbucket pipeline test case (simplified projection)
+ */
+interface BitbucketPipelineTestCaseSimplified {
+  name?: string;
+  status?: string;
+  duration?: number | string;
+  reason?: string;
+  output?: string;
+}
+
 // =========== MCP SERVER ===========
 class BitbucketServer {
   private readonly server: Server;
@@ -447,6 +458,23 @@ class BitbucketServer {
     "deletePullRequestComment",
     "deletePullRequestTask",
   ]);
+
+  // Resolve an axios client, optionally using a token alias from env (BITBUCKET_TOKEN_<ALIAS>)
+  private apiForTokenAlias(token_alias?: string): AxiosInstance {
+    const alias = (token_alias ?? "").trim();
+    if (!alias) return this.api;
+    const envKey = `BITBUCKET_TOKEN_${alias.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}`;
+    const token = process.env[envKey];
+    if (!token) {
+      // Fall back to default API but note via logs
+      logger.warn("Token alias not found; using default token", { envKey });
+      return this.api;
+    }
+    return axios.create({
+      baseURL: this.config.baseUrl,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  }
 
   private normalizeReviewerInput(
     reviewers: unknown
@@ -1571,6 +1599,32 @@ class BitbucketServer {
           },
         },
         {
+          name: "getPipelineStepTestCases",
+          description:
+            "List test cases for a specific pipeline step (Bitbucket Pipelines test reports)",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pipeline_uuid: {
+                type: "string",
+                description: "Pipeline UUID",
+              },
+              step_uuid: { type: "string", description: "Step UUID" },
+              token_alias: {
+                type: "string",
+                description:
+                  "Optional token alias; uses env BITBUCKET_TOKEN_<ALIAS> if provided",
+              },
+            },
+            required: ["workspace", "repo_slug", "pipeline_uuid", "step_uuid"],
+          },
+        },
+        {
           name: "getPullRequestComment",
           description: "Get a specific comment on a pull request",
           inputSchema: {
@@ -2148,6 +2202,14 @@ class BitbucketServer {
               args.errors_only as boolean | undefined,
               args.search_term as string | undefined,
               args.save_to_file as boolean | undefined
+            );
+          case "getPipelineStepTestCases":
+            return await this.getPipelineStepTestCases(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pipeline_uuid as string,
+              args.step_uuid as string,
+              args.token_alias as string | undefined
             );
           case "getPullRequestComment":
             return await this.getPullRequestComment(
@@ -4158,6 +4220,110 @@ class BitbucketServer {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to get pipeline step logs: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async getPipelineStepTestCases(
+    workspace: string,
+    repo_slug: string,
+    pipeline_uuid: string,
+    step_uuid: string,
+    token_alias?: string
+  ) {
+    try {
+      logger.info("Getting pipeline step test cases", {
+        workspace,
+        repo_slug,
+        pipeline_uuid,
+        step_uuid,
+        token_alias,
+      });
+
+      const client = this.apiForTokenAlias(token_alias);
+      const response = await client.get(
+        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/steps/${step_uuid}/test_reports/test_cases`
+      );
+
+      const rawValues: any[] = Array.isArray(response.data?.values)
+        ? response.data.values
+        : [];
+
+      const simplified: BitbucketPipelineTestCaseSimplified[] = rawValues.map(
+        (tc: any) => {
+          const name =
+            tc?.name ??
+            tc?.test_case?.name ??
+            tc?.test?.name ??
+            tc?.title ??
+            undefined;
+          const status = tc?.status ?? tc?.result?.status ?? tc?.outcome;
+          const duration =
+            tc?.duration ?? tc?.duration_in_ms ?? tc?.time ?? tc?.duration_in_seconds;
+          const reason =
+            tc?.failure?.message ??
+            tc?.message ??
+            tc?.reason ??
+            (tc?.failure && typeof tc.failure === "string" ? tc.failure : undefined);
+          const output =
+            tc?.failure?.backtrace ??
+            tc?.output ??
+            tc?.stdout ??
+            tc?.stderr ??
+            undefined;
+          return { name, status, duration, reason, output };
+        }
+      );
+
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(simplified, null, 2) },
+        ],
+      };
+    } catch (error) {
+      // Structured error for HTTP failures, else fallback to generic MCP error
+      if (axios.isAxiosError(error) && error.response) {
+        const status = error.response.status;
+        const message =
+          (error.response.data && (error.response.data.message || error.response.data.error)) ||
+          (error as AxiosError).message ||
+          `HTTP ${status}`;
+        logger.warn("Bitbucket API returned error for test cases", {
+          status,
+          message,
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: {
+                    status,
+                    message,
+                    data: error.response.data ?? null,
+                  },
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+      logger.error("Error getting pipeline step test cases", {
+        error,
+        workspace,
+        repo_slug,
+        pipeline_uuid,
+        step_uuid,
+        token_alias,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get pipeline step test cases: ${
           error instanceof Error ? error.message : String(error)
         }`
       );

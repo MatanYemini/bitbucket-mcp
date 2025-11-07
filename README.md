@@ -679,6 +679,34 @@ Gets logs for a specific pipeline step.
 - `pipeline_uuid`: Pipeline UUID
 - `step_uuid`: Step UUID
 
+#### `getPipelineStepTestCases`
+
+Lists test cases for a specific pipeline step (Bitbucket Pipelines test reports).
+
+Reference curl:
+
+```
+curl --request GET \
+  --url "https://api.bitbucket.org/2.0/repositories/{workspace}/{repo_slug}/pipelines/{pipeline_uuid}/steps/{step_uuid}/test_reports/test_cases" \
+  --header "Authorization: Bearer <access_token>"
+```
+
+MCP tool parameters:
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pipeline_uuid`: Pipeline UUID
+- `step_uuid`: Step UUID
+- `token_alias` (optional): If provided, the server uses the env var `BITBUCKET_TOKEN_<ALIAS>` for this request. Example: `token_alias="prod"` uses `BITBUCKET_TOKEN_PROD`.
+
+Returns a simplified JSON array of objects with:
+
+- `name`: test case name
+- `status`: test status (e.g., PASSED/FAILED/SKIPPED)
+- `duration`: duration as provided by Bitbucket (ms/seconds)
+- `reason`: failure message or reason (if any)
+- `output`: captured output/backtrace when available
+
 ## Development
 
 ### Prerequisites
