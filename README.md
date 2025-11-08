@@ -12,6 +12,23 @@ Every pull request is analyzed with CodeQL to ensure the code remains secure.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![npm version](https://badge.fury.io/js/bitbucket-mcp.svg)](https://www.npmjs.com/package/bitbucket-mcp)
 
+## Publishing & npm provenance
+
+Releases are published to npm using a GitHub Actions workflow that enables
+[npm provenance](https://docs.npmjs.com/generating-provenance-statements). The
+workflow runs the full test suite, builds the project, and publishes with
+`npm publish --provenance`, providing a cryptographic link between the published
+package and the repository commit that produced it.
+
+To publish a new version:
+
+1. Create a GitHub release or trigger the **Publish package to npm** workflow
+   manually.
+2. Ensure the repository has an `NPM_TOKEN` secret with `publish` rights to the
+   `bitbucket-mcp` package.
+3. The workflow will handle the rest, including generating the provenance
+   attestation automatically.
+
 ## Overview
 
 Checkout out the [official npm package](https://www.npmjs.com/package/bitbucket-mcp)
