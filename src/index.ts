@@ -3364,10 +3364,17 @@ class BitbucketServer {
         }
       );
 
-      const comments = commentsResult.values || [];
+      type PendingComment = {
+        id: number;
+        content: { raw?: string; html?: string; markup?: string };
+        inline?: InlineCommentInline;
+        pending?: boolean;
+      };
+
+      const comments = (commentsResult.values || []) as PendingComment[];
       const pendingComments = comments.filter(
         (comment: any) => comment.pending === true
-      );
+      ) as PendingComment[];
 
       if (pendingComments.length === 0) {
         return {
