@@ -23,7 +23,7 @@
     "publish:minor": "npm version minor && npm publish",
     "publish:major": "npm version major && npm publish",
     "release": "npm run publish:patch",
-    "test": "jest",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
     "lint": "eslint src/**/*.ts",
     "inspector": "npx @modelcontextprotocol/inspector dist/index.js"
   },

@@ -195,6 +195,17 @@ If you're developing locally and want to test your changes:
 
 This MCP server provides tools for interacting with Bitbucket repositories and pull requests. Below is a comprehensive list of the available operations:
 
+### Pagination
+
+Unless noted otherwise, listing tools accept the following optional parameters:
+
+- `pagelen`: Number of items per page (Bitbucket `pagelen`). Defaults to 10 and is capped at 100.
+- `page`: 1-based Bitbucket page number to fetch. When omitted, the first page is returned.
+- `all`: When `true` (and `page` is not provided), the server automatically follows Bitbucket `next` links until all items are fetched or a safety cap of 1,000 entries is reached.
+- `limit`: Deprecated alias for `pagelen` kept for backward compatibility.
+
+Use these knobs to page through large collections without hitting CLI truncation.
+
 ### Repository Operations
 
 #### `listRepositories`
@@ -204,7 +215,8 @@ Lists repositories in a workspace.
 **Parameters:**
 
 - `workspace` (optional): Bitbucket workspace name
-- `limit` (optional): Maximum number of repositories to return
+- `name` (optional): Filter repositories by partial name match
+- Pagination controls described in [Pagination](#pagination)
 
 #### `getRepository`
 
@@ -226,7 +238,7 @@ Gets pull requests for a repository.
 - `workspace`: Bitbucket workspace name
 - `repo_slug`: Repository slug
 - `state` (optional): Pull request state (`OPEN`, `MERGED`, `DECLINED`, `SUPERSEDED`)
-- `limit` (optional): Maximum number of pull requests to return
+- Pagination controls described in [Pagination](#pagination)
 
 #### `createPullRequest`
 
@@ -252,6 +264,10 @@ Gets details for a specific pull request.
 - `workspace`: Bitbucket workspace name
 - `repo_slug`: Repository slug
 - `pull_request_id`: Pull request ID
+- Pagination controls described in [Pagination](#pagination)
+- Pagination controls described in [Pagination](#pagination)
+- Pagination controls described in [Pagination](#pagination)
+- Pagination controls described in [Pagination](#pagination)
 
 #### `updatePullRequest`
 
@@ -262,6 +278,8 @@ Updates a pull request.
 - `workspace`: Bitbucket workspace name
 - `repo_slug`: Repository slug
 - `pull_request_id`: Pull request ID
+- Pagination controls described in [Pagination](#pagination)
+- Pagination controls described in [Pagination](#pagination)
 - Various optional update parameters (title, description, etc.)
 
 #### `getPullRequestActivity`
@@ -609,7 +627,7 @@ Lists pipeline runs for a repository.
 
 - `workspace`: Bitbucket workspace name
 - `repo_slug`: Repository slug
-- `limit` (optional): Maximum number of pipelines to return
+- Pagination controls described in [Pagination](#pagination)
 - `status` (optional): Filter pipelines by status (`PENDING`, `IN_PROGRESS`, `SUCCESSFUL`, `FAILED`, `ERROR`, `STOPPED`)
 - `target_branch` (optional): Filter pipelines by target branch
 - `trigger_type` (optional): Filter pipelines by trigger type (`manual`, `push`, `pullrequest`, `schedule`)
@@ -623,6 +641,7 @@ Gets details for a specific pipeline run.
 - `workspace`: Bitbucket workspace name
 - `repo_slug`: Repository slug
 - `pipeline_uuid`: Pipeline UUID
+- Pagination controls described in [Pagination](#pagination)
 
 #### `runPipeline`
 

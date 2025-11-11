@@ -12,6 +12,12 @@ import winston from "winston";
 import os from "os";
 import path from "path";
 import fs from "fs";
+import {
+  BitbucketPaginator,
+  BITBUCKET_ALL_ITEMS_CAP,
+  BITBUCKET_DEFAULT_PAGELEN,
+  BITBUCKET_MAX_PAGELEN,
+} from "./pagination.js";
 
 // =========== LOGGER SETUP ==========
 // File-based logging with sensible defaults and ability to disable
@@ -79,6 +85,31 @@ const logger = winston.createLogger({
     ? [new winston.transports.File({ filename: resolvedLogFile })]
     : [],
 });
+
+const PAGINATION_BASE_SCHEMA = {
+  pagelen: {
+    type: "number",
+    minimum: 1,
+    maximum: BITBUCKET_MAX_PAGELEN,
+    description: `Number of items per page (Bitbucket pagelen). Defaults to ${BITBUCKET_DEFAULT_PAGELEN} and caps at ${BITBUCKET_MAX_PAGELEN}.`,
+  },
+  page: {
+    type: "number",
+    minimum: 1,
+    description: "Bitbucket page number to fetch (1-based).",
+  },
+};
+
+const PAGINATION_ALL_SCHEMA = {
+  type: "boolean",
+  description: `When true (and no page is provided), automatically follows Bitbucket next links to return all items up to ${BITBUCKET_ALL_ITEMS_CAP}.`,
+};
+
+const LEGACY_LIMIT_SCHEMA = {
+  type: "number",
+  description:
+    "Deprecated alias for pagelen. Use pagelen/page/all for pagination control.",
+};
 
 // =========== TYPE DEFINITIONS ===========
 /**
@@ -443,6 +474,7 @@ class BitbucketServer {
   private readonly server: Server;
   private readonly api: AxiosInstance;
   private readonly config: BitbucketConfig;
+  private readonly paginator: BitbucketPaginator;
   private readonly dangerousToolNames = new Set<string>([
     "deletePullRequestComment",
     "deletePullRequestTask",
@@ -527,6 +559,8 @@ class BitbucketServer {
           : undefined,
     });
 
+    this.paginator = new BitbucketPaginator(this.api, logger);
+
     // Setup tool handlers using the request handler pattern
     this.setupToolHandlers();
 
@@ -548,15 +582,14 @@ class BitbucketServer {
                 type: "string",
                 description: "Bitbucket workspace name",
               },
-              limit: {
-                type: "number",
-                description: "Maximum number of repositories to return",
-              },
               name: {
                 type: "string",
                 description:
                   "Filter repositories by name (partial match supported)",
               },
+              ...PAGINATION_BASE_SCHEMA,
+              all: PAGINATION_ALL_SCHEMA,
+              limit: LEGACY_LIMIT_SCHEMA,
             },
           },
         },
@@ -591,10 +624,9 @@ class BitbucketServer {
                 enum: ["OPEN", "MERGED", "DECLINED", "SUPERSEDED"],
                 description: "Pull request state",
               },
-              limit: {
-                type: "number",
-                description: "Maximum number of pull requests to return",
-              },
+              ...PAGINATION_BASE_SCHEMA,
+              all: PAGINATION_ALL_SCHEMA,
+              limit: LEGACY_LIMIT_SCHEMA,
             },
             required: ["workspace", "repo_slug"],
           },
@@ -658,6 +690,8 @@ class BitbucketServer {
                 type: "string",
                 description: "Pull request ID",
               },
+              ...PAGINATION_BASE_SCHEMA,
+              all: PAGINATION_ALL_SCHEMA,
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
           },
@@ -701,6 +735,8 @@ class BitbucketServer {
                 type: "string",
                 description: "Pull request ID",
               },
+              ...PAGINATION_BASE_SCHEMA,
+              all: PAGINATION_ALL_SCHEMA,
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
           },
@@ -720,6 +756,8 @@ class BitbucketServer {
                 type: "string",
                 description: "Pull request ID",
               },
+              ...PAGINATION_BASE_SCHEMA,
+              all: PAGINATION_ALL_SCHEMA,
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
           },
@@ -739,6 +777,8 @@ class BitbucketServer {
                 type: "string",
                 description: "Pull request ID",
               },
+              ...PAGINATION_BASE_SCHEMA,
+              all: PAGINATION_ALL_SCHEMA,
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
           },
@@ -803,6 +843,8 @@ class BitbucketServer {
                 type: "string",
                 description: "Pull request ID",
               },
+              ...PAGINATION_BASE_SCHEMA,
+              all: PAGINATION_ALL_SCHEMA,
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
           },
@@ -841,6 +883,8 @@ class BitbucketServer {
                 type: "string",
                 description: "Pull request ID",
               },
+              ...PAGINATION_BASE_SCHEMA,
+              all: PAGINATION_ALL_SCHEMA,
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
           },
@@ -1269,10 +1313,9 @@ class BitbucketServer {
                 description: "Bitbucket workspace name",
               },
               repo_slug: { type: "string", description: "Repository slug" },
-              limit: {
-                type: "number",
-                description: "Maximum number of pipelines to return",
-              },
+              ...PAGINATION_BASE_SCHEMA,
+              all: PAGINATION_ALL_SCHEMA,
+              limit: LEGACY_LIMIT_SCHEMA,
               status: {
                 type: "string",
                 enum: [
@@ -1313,6 +1356,8 @@ class BitbucketServer {
                 type: "string",
                 description: "Pipeline UUID",
               },
+              ...PAGINATION_BASE_SCHEMA,
+              all: PAGINATION_ALL_SCHEMA,
             },
             required: ["workspace", "repo_slug", "pipeline_uuid"],
           },
@@ -1821,8 +1866,11 @@ class BitbucketServer {
           case "listRepositories":
             return await this.listRepositories(
               args.workspace as string,
-              args.limit as number,
-              args.name as string
+              args.pagelen as number,
+              args.page as number,
+              args.all as boolean,
+              args.name as string,
+              args.limit as number
             );
           case "getRepository":
             return await this.getRepository(
@@ -1834,6 +1882,9 @@ class BitbucketServer {
               args.workspace as string,
               args.repo_slug as string,
               args.state as "OPEN" | "MERGED" | "DECLINED" | "SUPERSEDED",
+              args.pagelen as number,
+              args.page as number,
+              args.all as boolean,
               args.limit as number
             );
           case "createPullRequest":
@@ -1865,7 +1916,10 @@ class BitbucketServer {
             return await this.getPullRequestActivity(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
+              args.pagelen as number,
+              args.page as number,
+              args.all as boolean
             );
           case "approvePullRequest":
             return await this.approvePullRequest(
@@ -1898,7 +1952,10 @@ class BitbucketServer {
             return await this.getPullRequestComments(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
+              args.pagelen as number,
+              args.page as number,
+              args.all as boolean
             );
           case "getPullRequestDiff":
             return await this.getPullRequestDiff(
@@ -1910,7 +1967,10 @@ class BitbucketServer {
             return await this.getPullRequestCommits(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
+              args.pagelen as number,
+              args.page as number,
+              args.all as boolean
             );
           case "addPullRequestComment":
             return await this.addPullRequestComment(
@@ -2008,7 +2068,9 @@ class BitbucketServer {
             return await this.listPipelineRuns(
               args.workspace as string,
               args.repo_slug as string,
-              args.limit as number,
+              args.pagelen as number,
+              args.page as number,
+              args.all as boolean,
               args.status as
                 | "PENDING"
                 | "IN_PROGRESS"
@@ -2021,7 +2083,8 @@ class BitbucketServer {
                 | "manual"
                 | "push"
                 | "pullrequest"
-                | "schedule"
+                | "schedule",
+              args.limit as number
             );
           case "getPipelineRun":
             return await this.getPipelineRun(
@@ -2046,7 +2109,10 @@ class BitbucketServer {
             return await this.getPipelineSteps(
               args.workspace as string,
               args.repo_slug as string,
-              args.pipeline_uuid as string
+              args.pipeline_uuid as string,
+              args.pagelen as number,
+              args.page as number,
+              args.all as boolean
             );
           case "getPipelineStep":
             return await this.getPipelineStep(
@@ -2109,7 +2175,10 @@ class BitbucketServer {
             return await this.getPullRequestDiffStat(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
+              args.pagelen as number,
+              args.page as number,
+              args.all as boolean
             );
           case "getPullRequestPatch":
             return await this.getPullRequestPatch(
@@ -2121,7 +2190,10 @@ class BitbucketServer {
             return await this.getPullRequestTasks(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
+              args.pagelen as number,
+              args.page as number,
+              args.all as boolean
             );
           case "createPullRequestTask":
             return await this.createPullRequestTask(
@@ -2159,7 +2231,10 @@ class BitbucketServer {
             return await this.getPullRequestStatuses(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
+              args.pagelen as number,
+              args.page as number,
+              args.all as boolean
             );
           default:
             throw new McpError(
@@ -2184,8 +2259,11 @@ class BitbucketServer {
 
   async listRepositories(
     workspace?: string,
-    limit: number = 10,
-    name?: string
+    pagelen?: number,
+    page?: number,
+    all?: boolean,
+    name?: string,
+    legacyLimit?: number
   ) {
     try {
       // Use default workspace if not provided
@@ -2200,28 +2278,33 @@ class BitbucketServer {
 
       logger.info("Listing Bitbucket repositories", {
         workspace: wsName,
-        limit,
+        pagelen: pagelen ?? legacyLimit,
+        page,
+        all,
         name,
       });
 
-      // Build query parameters
-      const params: Record<string, any> = { limit };
+      const params: Record<string, any> = {};
       if (name) {
         params.q = `name~"${name}"`;
       }
 
-      const response = await this.api.get(`/repositories/${wsName}`, {
-        params,
-      });
-
-      // Use the results from Bitbucket API directly
-      let repositories = response.data.values;
+      const repositories = await this.paginator.fetchValues<BitbucketRepository>(
+        `/repositories/${wsName}`,
+        {
+          pagelen: pagelen ?? legacyLimit,
+          page,
+          all,
+          params,
+          description: "listRepositories",
+        }
+      );
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(repositories, null, 2),
+            text: JSON.stringify(repositories.values, null, 2),
           },
         ],
       };
@@ -2270,23 +2353,34 @@ class BitbucketServer {
     workspace: string,
     repo_slug: string,
     state?: "OPEN" | "MERGED" | "DECLINED" | "SUPERSEDED",
-    limit: number = 10
+    pagelen?: number,
+    page?: number,
+    all?: boolean,
+    legacyLimit?: number
   ) {
     try {
       logger.info("Getting Bitbucket pull requests", {
         workspace,
         repo_slug,
         state,
-        limit,
+        pagelen: pagelen ?? legacyLimit,
+        page,
+        all,
       });
 
-      const response = await this.api.get(
+      const params: Record<string, any> = {};
+      if (state) {
+        params.state = state;
+      }
+
+      const result = await this.paginator.fetchValues<BitbucketPullRequest>(
         `/repositories/${workspace}/${repo_slug}/pullrequests`,
         {
-          params: {
-            state: state,
-            limit,
-          },
+          pagelen: pagelen ?? legacyLimit,
+          page,
+          all,
+          params,
+          description: "getPullRequests",
         }
       );
 
@@ -2294,7 +2388,7 @@ class BitbucketServer {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data.values, null, 2),
+            text: JSON.stringify(result.values, null, 2),
           },
         ],
       };
@@ -2474,24 +2568,36 @@ class BitbucketServer {
   async getPullRequestActivity(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
+    pagelen?: number,
+    page?: number,
+    all?: boolean
   ) {
     try {
       logger.info("Getting Bitbucket pull request activity", {
         workspace,
         repo_slug,
         pull_request_id,
+        pagelen,
+        page,
+        all,
       });
 
-      const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/activity`
+      const result = await this.paginator.fetchValues(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/activity`,
+        {
+          pagelen,
+          page,
+          all,
+          description: "getPullRequestActivity",
+        }
       );
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data.values, null, 2),
+            text: JSON.stringify(result.values, null, 2),
           },
         ],
       };
@@ -2688,24 +2794,36 @@ class BitbucketServer {
   async getPullRequestComments(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
+    pagelen?: number,
+    page?: number,
+    all?: boolean
   ) {
     try {
       logger.info("Getting Bitbucket pull request comments", {
         workspace,
         repo_slug,
         pull_request_id,
+        pagelen,
+        page,
+        all,
       });
 
-      const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments`
+      const result = await this.paginator.fetchValues(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments`,
+        {
+          pagelen,
+          page,
+          all,
+          description: "getPullRequestComments",
+        }
       );
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data.values, null, 2),
+            text: JSON.stringify(result.values, null, 2),
           },
         ],
       };
@@ -2784,24 +2902,36 @@ class BitbucketServer {
   async getPullRequestCommits(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
+    pagelen?: number,
+    page?: number,
+    all?: boolean
   ) {
     try {
       logger.info("Getting Bitbucket pull request commits", {
         workspace,
         repo_slug,
         pull_request_id,
+        pagelen,
+        page,
+        all,
       });
 
-      const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/commits`
+      const result = await this.paginator.fetchValues(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/commits`,
+        {
+          pagelen,
+          page,
+          all,
+          description: "getPullRequestCommits",
+        }
       );
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data.values, null, 2),
+            text: JSON.stringify(result.values, null, 2),
           },
         ],
       };
@@ -3225,11 +3355,16 @@ class BitbucketServer {
       });
 
       // First, get all pending comments for the pull request
-      const commentsResponse = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments`
+      const commentsResult = await this.paginator.fetchValues(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments`,
+        {
+          pagelen: BITBUCKET_MAX_PAGELEN,
+          all: true,
+          description: "publishPendingComments",
+        }
       );
 
-      const comments = commentsResponse.data.values || [];
+      const comments = commentsResult.values || [];
       const pendingComments = comments.filter(
         (comment: any) => comment.pending === true
       );
@@ -3474,20 +3609,23 @@ class BitbucketServer {
       } else {
         // Get all repositories in the workspace (existing behavior)
         logger.info("Getting all repositories in workspace...");
-        const reposResponse = await this.api.get(`/repositories/${wsName}`, {
-          params: { pagelen: 100 },
-        });
+        const reposResponse = await this.paginator.fetchValues(
+          `/repositories/${wsName}`,
+          {
+            pagelen: BITBUCKET_MAX_PAGELEN,
+            all: true,
+            description: "getPendingReviewPRs.repositories",
+          }
+        );
 
-        if (!reposResponse.data.values) {
+        if (!reposResponse.values) {
           throw new McpError(
             ErrorCode.InternalError,
             "Failed to fetch repositories"
           );
         }
 
-        repositoriesToCheck = reposResponse.data.values.map(
-          (repo: any) => repo.name
-        );
+        repositoriesToCheck = reposResponse.values.map((repo: any) => repo.name);
         logger.info(
           `Found ${repositoriesToCheck.length} repositories to check`
         );
@@ -3633,7 +3771,9 @@ class BitbucketServer {
   async listPipelineRuns(
     workspace: string,
     repo_slug: string,
-    limit?: number,
+    pagelen?: number,
+    page?: number,
+    all?: boolean,
     status?:
       | "PENDING"
       | "IN_PROGRESS"
@@ -3642,34 +3782,42 @@ class BitbucketServer {
       | "ERROR"
       | "STOPPED",
     target_branch?: string,
-    trigger_type?: "manual" | "push" | "pullrequest" | "schedule"
+    trigger_type?: "manual" | "push" | "pullrequest" | "schedule",
+    legacyLimit?: number
   ) {
     try {
       logger.info("Listing pipeline runs", {
         workspace,
         repo_slug,
-        limit,
+        pagelen: pagelen ?? legacyLimit,
+        page,
+        all,
         status,
         target_branch,
         trigger_type,
       });
 
       const params: Record<string, any> = {};
-      if (limit) params.pagelen = limit;
       if (status) params.status = status;
       if (target_branch) params["target.branch"] = target_branch;
       if (trigger_type) params.trigger_type = trigger_type;
 
-      const response = await this.api.get(
+      const result = await this.paginator.fetchValues(
         `/repositories/${workspace}/${repo_slug}/pipelines`,
-        { params }
+        {
+          pagelen: pagelen ?? legacyLimit,
+          page,
+          all,
+          params,
+          description: "listPipelineRuns",
+        }
       );
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data.values, null, 2),
+            text: JSON.stringify(result.values, null, 2),
           },
         ],
       };
@@ -3852,24 +4000,36 @@ class BitbucketServer {
   async getPipelineSteps(
     workspace: string,
     repo_slug: string,
-    pipeline_uuid: string
+    pipeline_uuid: string,
+    pagelen?: number,
+    page?: number,
+    all?: boolean
   ) {
     try {
       logger.info("Getting pipeline steps", {
         workspace,
         repo_slug,
         pipeline_uuid,
+        pagelen,
+        page,
+        all,
       });
 
-      const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/steps`
+      const result = await this.paginator.fetchValues(
+        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/steps`,
+        {
+          pagelen,
+          page,
+          all,
+          description: "getPipelineSteps",
+        }
       );
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data.values, null, 2),
+            text: JSON.stringify(result.values, null, 2),
           },
         ],
       };
@@ -4253,22 +4413,34 @@ class BitbucketServer {
   async getPullRequestDiffStat(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
+    pagelen?: number,
+    page?: number,
+    all?: boolean
   ) {
     try {
       logger.info("Getting pull request diffstat", {
         workspace,
         repo_slug,
         pull_request_id,
+        pagelen,
+        page,
+        all,
       });
 
-      const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/diffstat`
+      const result = await this.paginator.fetchValues(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/diffstat`,
+        {
+          pagelen,
+          page,
+          all,
+          description: "getPullRequestDiffStat",
+        }
       );
 
       return {
         content: [
-          { type: "text", text: JSON.stringify(response.data.values, null, 2) },
+          { type: "text", text: JSON.stringify(result.values, null, 2) },
         ],
       };
     } catch (error) {
@@ -4328,22 +4500,34 @@ class BitbucketServer {
   async getPullRequestTasks(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
+    pagelen?: number,
+    page?: number,
+    all?: boolean
   ) {
     try {
       logger.info("Getting pull request tasks", {
         workspace,
         repo_slug,
         pull_request_id,
+        pagelen,
+        page,
+        all,
       });
 
-      const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/tasks`
+      const result = await this.paginator.fetchValues(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/tasks`,
+        {
+          pagelen,
+          page,
+          all,
+          description: "getPullRequestTasks",
+        }
       );
 
       return {
         content: [
-          { type: "text", text: JSON.stringify(response.data.values, null, 2) },
+          { type: "text", text: JSON.stringify(result.values, null, 2) },
         ],
       };
     } catch (error) {
@@ -4528,22 +4712,44 @@ class BitbucketServer {
   async getPullRequestStatuses(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
+    pagelen?: number,
+    page?: number,
+    all?: boolean
   ) {
     try {
       logger.info("Getting pull request statuses", {
         workspace,
         repo_slug,
         pull_request_id,
+        pagelen,
+        page,
+        all,
       });
 
-      const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/statuses`
+      const result = await this.paginator.fetchValues(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/statuses`,
+        {
+          pagelen,
+          page,
+          all,
+          description: "getPullRequestStatuses",
+        }
       );
+
+      const payload = {
+        values: result.values,
+        page: result.page,
+        pagelen: result.pagelen,
+        next: result.next,
+        previous: result.previous,
+        fetchedPages: result.fetchedPages,
+        totalFetched: result.totalFetched,
+      };
 
       return {
         content: [
-          { type: "text", text: JSON.stringify(response.data, null, 2) },
+          { type: "text", text: JSON.stringify(payload, null, 2) },
         ],
       };
     } catch (error) {
