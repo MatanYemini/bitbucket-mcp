@@ -701,6 +701,25 @@ npm run build
 npm run dev
 ```
 
+## Publishing to the MCP Registry
+
+Use the official Model Context Protocol publishing guide when you are ready to make a new server release. The repository includes
+everything that guide expects:
+
+1. Build the project so `dist/index.js` is up to date:
+   ```bash
+   npm run build
+   ```
+2. Generate the registry manifest (this reads `package.json` and emits `registry/bitbucket-mcp.manifest.json`):
+   ```bash
+   npm run registry:manifest
+   ```
+3. Follow the [publish-server guide](https://github.com/modelcontextprotocol/registry/blob/main/docs/guides/publishing/publish-server.md)
+   to push the manifest with `smithery publish` or the recommended workflow from the guide.
+
+The generated manifest captures the CLI command (`node dist/index.js`), all documented configuration options, and pointers back to
+this README for setup instructions, so it can be submitted directly to the MCP registry.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

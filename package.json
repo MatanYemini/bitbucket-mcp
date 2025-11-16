@@ -25,7 +25,8 @@
     "release": "npm run publish:patch",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
-    "inspector": "npx @modelcontextprotocol/inspector dist/index.js"
+    "inspector": "npx @modelcontextprotocol/inspector dist/index.js",
+    "registry:manifest": "node scripts/generate-registry-manifest.cjs"
   },
   "keywords": [
     "bitbucket",
