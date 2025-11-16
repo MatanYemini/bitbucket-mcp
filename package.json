@@ -2,6 +2,7 @@
   "name": "bitbucket-mcp",
   "version": "5.0.2",
   "description": "Model Context Protocol (MCP) server for Bitbucket Cloud and Server API integration",
+  "mcpName": "io.github.MatanYemini/bitbucket-mcp",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -26,7 +27,8 @@
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "inspector": "npx @modelcontextprotocol/inspector dist/index.js",
-    "registry:manifest": "node scripts/generate-registry-manifest.cjs"
+    "registry:manifest": "node scripts/generate-registry-manifest.cjs",
+    "registry:validate": "node scripts/validate-server-json.mjs"
   },
   "keywords": [
     "bitbucket",
@@ -53,6 +55,8 @@
     "winston": "^3.11.0"
   },
   "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "@types/express": "^4.17.21",
     "@types/jest": "^29.5.11",
     "@types/node": "^20.11.24",
