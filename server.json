@@ -3,12 +3,12 @@
   "name": "io.github.MatanYemini/bitbucket-mcp",
   "title": "Bitbucket MCP",
   "description": "Model Context Protocol (MCP) server for Bitbucket Cloud and Server API integration",
-  "version": "5.0.2",
+  "version": "5.0.5",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "bitbucket-mcp",
-      "version": "5.0.2",
+      "version": "5.0.5",
       "transport": {
         "type": "stdio"
       }
