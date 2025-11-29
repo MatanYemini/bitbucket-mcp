@@ -140,7 +140,12 @@ curl -u "your-username:your-app-password" \
   "https://api.bitbucket.org/2.0/repositories/your-workspace"
 ```
 
-1. **Atlassian API Key**: Put the Atlassian API Key in the `BITBUCKET_PASSWORD` variable, not `BITBUCKET_TOKEN`.
+### Atlassian API Key 
+
+1. Put the Atlassian API Key in the `BITBUCKET_PASSWORD` variable, not `BITBUCKET_TOKEN`
+2. Use your Bitbucket email as `BITBUCKET_USERNAME` instead of your regular username
+
+For reference you can check the [API token documentation](https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/)
 
 ### Getting Help
 
