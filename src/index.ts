@@ -905,6 +905,11 @@ class BitbucketServer {
                 description:
                   "Optional page length (items per page). Bitbucket default is 10 and allows up to 1000 on some endpoints.",
               },
+              accumulate: {
+                type: "boolean",
+                description:
+                  "Follow pagination automatically to return all comments. Defaults to true when no explicit page is provided.",
+              },
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
           },
@@ -2044,7 +2049,8 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.page as number | undefined,
-              args.pagelen as number | undefined
+              args.pagelen as number | undefined,
+              args.accumulate as boolean | undefined
             );
           case "getPullRequestDiff":
             return await this.getPullRequestDiff(
@@ -2853,7 +2859,8 @@ class BitbucketServer {
     repo_slug: string,
     pull_request_id: string,
     page?: number,
-    pagelen?: number
+    pagelen?: number,
+    accumulate?: boolean
   ) {
     try {
       logger.info("Getting Bitbucket pull request comments", {
@@ -2862,23 +2869,83 @@ class BitbucketServer {
         pull_request_id,
         page,
         pagelen,
+        accumulate,
       });
 
-      const params: Record<string, number> = {};
-      if (typeof page === "number" && isFinite(page)) params.page = page;
-      if (typeof pagelen === "number" && isFinite(pagelen))
-        params.pagelen = pagelen;
+      // Bitbucket caps pagelen at 100 for this endpoint; clamp to stay under 400 errors
+      const resolvedPagelen = (() => {
+        if (typeof pagelen === "number" && isFinite(pagelen) && pagelen > 0) {
+          return Math.min(100, Math.floor(pagelen));
+        }
+        return 100;
+      })();
 
-      const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments`,
-        { params }
-      );
+      // If the caller supplied an explicit page, respect it and do a single request.
+      // Otherwise, accumulate all pages by default (unless explicitly disabled).
+      const shouldAccumulate =
+        accumulate !== undefined
+          ? accumulate
+          : typeof page !== "number" || !isFinite(page);
+
+      const allComments: any[] = [];
+      let nextUrl: string | undefined;
+      let currentPage =
+        typeof page === "number" && isFinite(page) ? page : 1;
+      let fetchCount = 0;
+
+      do {
+        const params: Record<string, number> = {
+          page: currentPage,
+          pagelen: resolvedPagelen,
+        };
+
+        // Use absolute "next" URLs when provided to preserve any server-chosen cursors/filters
+        const response = nextUrl
+          ? await this.api.get(nextUrl)
+          : await this.api.get(
+              `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments`,
+              { params }
+            );
+
+        const values = Array.isArray(response.data.values)
+          ? response.data.values
+          : [];
+        allComments.push(...values);
+
+        fetchCount += 1;
+        nextUrl =
+          shouldAccumulate && typeof response.data.next === "string"
+            ? response.data.next
+            : undefined;
+
+        if (nextUrl) {
+          // Bitbucket "next" already encodes cursor/page; derive page when present, otherwise increment defensively
+          const nextPageMatch = nextUrl.match(/[?&]page=(\d+)/);
+          currentPage = nextPageMatch ? Number(nextPageMatch[1]) : currentPage + 1;
+        }
+
+        // Safety valve to avoid accidental infinite loops
+        if (fetchCount > 500) {
+          throw new Error(
+            "Pagination aborted after 500 pages to prevent infinite loop"
+          );
+        }
+      } while (nextUrl);
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data.values, null, 2),
+            text: JSON.stringify(
+              {
+                count: allComments.length,
+                pages: fetchCount,
+                pagelen: resolvedPagelen,
+                comments: allComments,
+              },
+              null,
+              2
+            ),
           },
         ],
       };
