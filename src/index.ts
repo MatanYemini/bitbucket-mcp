@@ -896,6 +896,15 @@ class BitbucketServer {
                 type: "string",
                 description: "Pull request ID",
               },
+              page: {
+                type: "number",
+                description: "Optional page number (Bitbucket pagination)",
+              },
+              pagelen: {
+                type: "number",
+                description:
+                  "Optional page length (items per page). Bitbucket default is 10 and allows up to 1000 on some endpoints.",
+              },
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
           },
@@ -2033,7 +2042,9 @@ class BitbucketServer {
             return await this.getPullRequestComments(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
+              args.page as number | undefined,
+              args.pagelen as number | undefined
             );
           case "getPullRequestDiff":
             return await this.getPullRequestDiff(
@@ -2840,17 +2851,27 @@ class BitbucketServer {
   async getPullRequestComments(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
+    page?: number,
+    pagelen?: number
   ) {
     try {
       logger.info("Getting Bitbucket pull request comments", {
         workspace,
         repo_slug,
         pull_request_id,
+        page,
+        pagelen,
       });
 
+      const params: Record<string, number> = {};
+      if (typeof page === "number" && isFinite(page)) params.page = page;
+      if (typeof pagelen === "number" && isFinite(pagelen))
+        params.pagelen = pagelen;
+
       const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments`
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments`,
+        { params }
       );
 
       return {
