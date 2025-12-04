@@ -2949,10 +2949,18 @@ class BitbucketServer {
       } while (nextUrl);
 
       const filtered = allComments.filter((c: any) => {
-        if (unresolved === true && c?.resolved === true) return false;
-        if (unresolved === false && c?.resolved !== true) return false;
-        if (onlyInline === true && !c?.inline) return false;
-        if (onlyInline === false && c?.inline) return false;
+        const inlineInfo = c?.inline;
+        const isInline = Boolean(inlineInfo);
+
+        const resolutionInfo = c?.resolution;
+        const resolvedFlag = c?.resolved;
+        const isResolved =
+          resolvedFlag === true || (resolutionInfo && typeof resolutionInfo === "object");
+
+        if (unresolved === true && isResolved) return false;
+        if (unresolved === false && !isResolved) return false;
+        if (onlyInline === true && !isInline) return false;
+        if (onlyInline === false && isInline) return false;
         return true;
       });
 
