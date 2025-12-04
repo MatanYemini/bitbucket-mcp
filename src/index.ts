@@ -910,6 +910,16 @@ class BitbucketServer {
                 description:
                   "Follow pagination automatically to return all comments. Defaults to true when no explicit page is provided.",
               },
+              unresolved: {
+                type: "boolean",
+                description:
+                  "Filter after fetch by resolution state: true -> unresolved only, false -> resolved only, omit for all",
+              },
+              onlyInline: {
+                type: "boolean",
+                description:
+                  "Filter after fetch by placement: true -> inline only, false -> non-inline only, omit for all",
+              },
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
           },
@@ -2050,7 +2060,9 @@ class BitbucketServer {
               args.pull_request_id as string,
               args.page as number | undefined,
               args.pagelen as number | undefined,
-              args.accumulate as boolean | undefined
+              args.accumulate as boolean | undefined,
+              args.unresolved as boolean | undefined,
+              args.onlyInline as boolean | undefined
             );
           case "getPullRequestDiff":
             return await this.getPullRequestDiff(
@@ -2860,7 +2872,9 @@ class BitbucketServer {
     pull_request_id: string,
     page?: number,
     pagelen?: number,
-    accumulate?: boolean
+    accumulate?: boolean,
+    unresolved?: boolean,
+    onlyInline?: boolean
   ) {
     try {
       logger.info("Getting Bitbucket pull request comments", {
@@ -2870,6 +2884,8 @@ class BitbucketServer {
         page,
         pagelen,
         accumulate,
+        unresolved,
+        onlyInline,
       });
 
       // Bitbucket caps pagelen at 100 for this endpoint; clamp to stay under 400 errors
@@ -2932,16 +2948,24 @@ class BitbucketServer {
         }
       } while (nextUrl);
 
+      const filtered = allComments.filter((c: any) => {
+        if (unresolved === true && c?.resolved === true) return false;
+        if (unresolved === false && c?.resolved !== true) return false;
+        if (onlyInline === true && !c?.inline) return false;
+        if (onlyInline === false && c?.inline) return false;
+        return true;
+      });
+
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify(
               {
-                count: allComments.length,
+                count: filtered.length,
                 pages: fetchCount,
                 pagelen: resolvedPagelen,
-                comments: allComments,
+                comments: filtered,
               },
               null,
               2
