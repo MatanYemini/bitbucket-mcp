@@ -388,7 +388,7 @@ Lists comments on a pull request.
 - `pull_request_id`: Pull request ID
 - `page` (optional): Page number to fetch (Bitbucket paginates results)
 - `pagelen` (optional): Items per page (defaults to Bitbucket's 10; some endpoints allow up to 1000)
-- `unresolved` (optional): Filter after fetch; `true` -> unresolved only, `false` -> resolved only (uses `resolved` flag or `resolution` object)
+- `unresolved` (optional): Filter after fetch; `true` -> unresolved only, `false` -> resolved only (uses presence of `resolution` object)
 - `onlyInline` (optional): Filter after fetch; `true` -> inline only, `false` -> non-inline only
 
 #### `addPullRequestComment`

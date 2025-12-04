@@ -2953,9 +2953,7 @@ class BitbucketServer {
         const isInline = Boolean(inlineInfo);
 
         const resolutionInfo = c?.resolution;
-        const resolvedFlag = c?.resolved;
-        const isResolved =
-          resolvedFlag === true || (resolutionInfo && typeof resolutionInfo === "object");
+        const isResolved = Boolean(resolutionInfo && typeof resolutionInfo === "object");
 
         if (unresolved === true && isResolved) return false;
         if (unresolved === false && !isResolved) return false;
