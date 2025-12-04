@@ -386,6 +386,8 @@ Lists comments on a pull request.
 - `workspace`: Bitbucket workspace name
 - `repo_slug`: Repository slug
 - `pull_request_id`: Pull request ID
+- `page` (optional): Page number to fetch (Bitbucket paginates results)
+- `pagelen` (optional): Items per page (defaults to Bitbucket's 10; some endpoints allow up to 1000)
 
 #### `addPullRequestComment`
 
