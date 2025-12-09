@@ -658,7 +658,8 @@ class BitbucketServer {
               reviewers: {
                 type: "array",
                 items: { type: "string" },
-                description: "List of reviewer usernames",
+                description:
+                  "List of reviewer UUIDs (e.g., '{04776764-62c7-453b-b97e-302f60395ceb}')",
               },
               draft: {
                 type: "boolean",
@@ -1226,7 +1227,8 @@ class BitbucketServer {
               reviewers: {
                 type: "array",
                 items: { type: "string" },
-                description: "List of reviewer usernames",
+                description:
+                  "List of reviewer UUIDs (e.g., '{04776764-62c7-453b-b97e-302f60395ceb}')",
               },
             },
             required: [
@@ -1895,7 +1897,7 @@ class BitbucketServer {
               args.description as string,
               args.sourceBranch as string,
               args.targetBranch as string,
-              args.reviewers as string[],
+              args.reviewers as string[] | undefined,
               args.draft as boolean
             );
           case "getPullRequest":
@@ -2427,31 +2429,52 @@ class BitbucketServer {
       });
 
       // Prepare reviewers format if provided
-      const reviewersArray =
-        reviewers?.map((username) => ({
-          username,
-        })) || [];
+      // Bitbucket API expects reviewers as array of objects: [{uuid: "{...}"}]
+      // Input is string array of UUIDs: ["{04776764-62c7-453b-b97e-302f60395ceb}", ...]
+      // Convert to API format: [{uuid: "{...}"}, ...]
+      let reviewersArray: Array<{ uuid: string }> | undefined;
+
+      if (reviewers && reviewers.length > 0) {
+        reviewersArray = reviewers
+          .filter((uuid) => typeof uuid === "string" && uuid.trim().length > 0)
+          .map((uuid) => ({ uuid: uuid.trim() }));
+
+        if (reviewersArray.length === 0) {
+          reviewersArray = undefined;
+        }
+      }
+
+      // Build request payload - only include reviewers if provided
+      const requestPayload: Record<string, any> = {
+        title,
+        description,
+        source: {
+          branch: {
+            name: sourceBranch,
+          },
+        },
+        destination: {
+          branch: {
+            name: targetBranch,
+          },
+        },
+        close_source_branch: true,
+      };
+
+      // Only include reviewers field if there are reviewers to add
+      if (reviewersArray && reviewersArray.length > 0) {
+        requestPayload.reviewers = reviewersArray;
+      }
+
+      // Only include draft field if explicitly set to true
+      if (draft === true) {
+        requestPayload.draft = true;
+      }
 
       // Create the pull request
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pullrequests`,
-        {
-          title,
-          description,
-          source: {
-            branch: {
-              name: sourceBranch,
-            },
-          },
-          destination: {
-            branch: {
-              name: targetBranch,
-            },
-          },
-          reviewers: reviewersArray,
-          close_source_branch: true,
-          draft: draft === true, // Only set draft=true if explicitly specified
-        }
+        requestPayload
       );
 
       return {
