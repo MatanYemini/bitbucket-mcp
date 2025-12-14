@@ -7,6 +7,10 @@ yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
 
+# MCP Registry
+.mcpregistry_registry_token
+.mcpregistry_github_token
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
