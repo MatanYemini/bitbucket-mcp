@@ -4212,8 +4212,8 @@ class BitbucketServer {
         typeof response.data === "string"
           ? response.data
           : response.data === undefined || response.data === null
-            ? ""
-            : String(response.data);
+          ? ""
+          : String(response.data);
       const allLines = rawLog.length > 0 ? rawLog.split(/\r?\n/) : [];
       const totalLines = allLines.length;
 
@@ -4234,10 +4234,7 @@ class BitbucketServer {
         typeof maxLines === "number" && Number.isFinite(maxLines)
           ? Math.floor(maxLines)
           : defaultMaxLines;
-      const resolvedMaxLines = Math.max(
-        1,
-        Math.min(normalizedMaxLines, 5000)
-      );
+      const resolvedMaxLines = Math.max(1, Math.min(normalizedMaxLines, 5000));
 
       const hasLines = filteredLines.length > 0;
       const limitedLines = hasLines
@@ -4245,11 +4242,10 @@ class BitbucketServer {
           ? filteredLines.slice(-resolvedMaxLines)
           : filteredLines.slice(0, resolvedMaxLines)
         : [];
-      const wasTruncated = hasLines && filteredLines.length > limitedLines.length;
+      const wasTruncated =
+        hasLines && filteredLines.length > limitedLines.length;
 
-      const summaryParts: string[] = [
-        `Total log lines: ${totalLines}.`,
-      ];
+      const summaryParts: string[] = [`Total log lines: ${totalLines}.`];
       if (errorsOnly || (normalizedSearch && normalizedSearch.length > 0)) {
         summaryParts.push(`Lines after filtering: ${filteredLines.length}.`);
       }
@@ -4257,7 +4253,9 @@ class BitbucketServer {
         summaryParts.push("No log lines matched the provided filters.");
       } else {
         summaryParts.push(
-          `Showing ${limitedLines.length} ${tail ? "most recent" : "earliest"} lines${
+          `Showing ${limitedLines.length} ${
+            tail ? "most recent" : "earliest"
+          } lines${
             wasTruncated ? ` (limited to ${resolvedMaxLines} lines)` : ""
           }.`
         );
@@ -4265,11 +4263,14 @@ class BitbucketServer {
 
       if (saveToFile) {
         try {
-          const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bitbucket-mcp-"));
-          const safeFileName = `pipeline-${pipeline_uuid}-step-${step_uuid}.log`.replace(
-            /[^a-zA-Z0-9._-]/g,
-            "_"
+          const tempDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), "bitbucket-mcp-")
           );
+          const safeFileName =
+            `pipeline-${pipeline_uuid}-step-${step_uuid}.log`.replace(
+              /[^a-zA-Z0-9._-]/g,
+              "_"
+            );
           const filePath = path.join(tempDir, safeFileName);
           fs.writeFileSync(filePath, rawLog, "utf8");
           summaryParts.push(`Full log saved to: ${filePath}`);
@@ -4461,18 +4462,59 @@ class BitbucketServer {
         resolved,
       });
 
-      const response = await this.api.put(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments/${comment_id}`,
-        {
-          resolved,
+      const commentUrl = (id: string) =>
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments/${id}`;
+      const resolveUrl = (id: string) => `${commentUrl(id)}/resolve`;
+
+      // Bitbucket resolves comment *threads*, and the API expects the thread root comment ID.
+      // If the provided comment_id is a reply, walk up the parent chain to find the root.
+      let targetCommentId = comment_id;
+      try {
+        const visited = new Set<string>();
+        for (let depth = 0; depth < 25; depth++) {
+          if (visited.has(targetCommentId)) break;
+          visited.add(targetCommentId);
+
+          const commentResponse = await this.api.get(
+            commentUrl(targetCommentId)
+          );
+          const parentId = commentResponse.data?.parent?.id;
+          if (parentId === undefined || parentId === null) break;
+          targetCommentId = String(parentId);
         }
-      );
+      } catch (lookupError) {
+        // If we fail to look up the comment hierarchy, still attempt to resolve the provided ID.
+        logger.warn(
+          "Failed to resolve comment thread root; falling back to comment_id",
+          {
+            error: lookupError,
+            workspace,
+            repo_slug,
+            pull_request_id,
+            comment_id,
+          }
+        );
+        targetCommentId = comment_id;
+      }
+
+      const response = resolved
+        ? await this.api.post(resolveUrl(targetCommentId))
+        : await this.api.delete(resolveUrl(targetCommentId));
+
+      const responseText =
+        response.data === undefined ||
+        response.data === null ||
+        response.data === ""
+          ? resolved
+            ? `Comment thread resolved (comment_id: ${targetCommentId}).`
+            : `Comment thread reopened (comment_id: ${targetCommentId}).`
+          : JSON.stringify(response.data, null, 2);
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data, null, 2),
+            text: responseText,
           },
         ],
       };
