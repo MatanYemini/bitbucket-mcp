@@ -1837,6 +1837,21 @@ class BitbucketServer {
             required: ["workspace", "repo_slug", "pull_request_id"],
           },
         },
+        {
+          name: "getEffectiveDefaultReviewers",
+          description: "Get effective default reviewers for a repository",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+            },
+            required: ["workspace", "repo_slug"],
+          },
+        },
       ].filter(
         (tool) =>
           this.config.allowDangerousCommands === true ||
@@ -2238,6 +2253,11 @@ class BitbucketServer {
               args.page as number,
               args.all as boolean
             );
+          case "getEffectiveDefaultReviewers":
+            return await this.getEffectiveDefaultReviewers(
+              args.workspace as string,
+              args.repo_slug as string
+            );
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
@@ -2345,6 +2365,40 @@ class BitbucketServer {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to get repository: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async getEffectiveDefaultReviewers(workspace: string, repo_slug: string) {
+    try {
+      logger.info("Getting effective default reviewers", {
+        workspace,
+        repo_slug,
+      });
+
+      const response = await this.api.get(
+        `/repositories/${workspace}/${repo_slug}/effective-default-reviewers`
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error getting effective default reviewers", {
+        error,
+        workspace,
+        repo_slug,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get effective default reviewers: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
