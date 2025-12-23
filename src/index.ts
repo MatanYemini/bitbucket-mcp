@@ -548,11 +548,13 @@ class BitbucketServer {
     }
 
     // Setup Axios instance
+    const headers: Record<string, string> = {};
+    if (this.config.token) {
+      headers.Authorization = `Bearer ${this.config.token}`;
+    }
     this.api = axios.create({
       baseURL: this.config.baseUrl,
-      headers: this.config.token
-        ? { Authorization: `Bearer ${this.config.token}` }
-        : { "Content-Type": "application/json" },
+      headers,
       auth:
         this.config.username && this.config.password
           ? { username: this.config.username, password: this.config.password }
