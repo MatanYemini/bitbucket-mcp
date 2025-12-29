@@ -50,7 +50,7 @@
     "url": "https://github.com/MatanYemini/bitbucket-mcp/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.1.1",
+    "@modelcontextprotocol/sdk": "1.25.1",
     "axios": "^1.6.5",
     "winston": "^3.11.0"
   },
