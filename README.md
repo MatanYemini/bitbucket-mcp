@@ -410,7 +410,7 @@ Lists comments on a pull request.
 
 #### `addPullRequestComment`
 
-Creates a comment on a pull request (general or inline).
+Creates a comment on a pull request (general, inline, or reply).
 
 **Parameters:**
 
@@ -419,6 +419,8 @@ Creates a comment on a pull request (general or inline).
 - `pull_request_id`: Pull request ID
 - `content`: Comment content in markdown format
 - `inline` (optional): Inline comment information for commenting on specific lines
+- `parent_id` (optional): Parent comment ID for creating threaded replies
+- `pending` (optional): Whether to create this comment as a pending comment (draft state)
 
 **Inline Comment Format:**
 
