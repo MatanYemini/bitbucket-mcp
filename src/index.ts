@@ -894,7 +894,7 @@ class BitbucketServer {
         },
         {
           name: "addPullRequestComment",
-          description: "Add a comment to a pull request (general or inline)",
+          description: "Add a comment to a pull request (general, inline, or reply)",
           inputSchema: {
             type: "object",
             properties: {
@@ -915,6 +915,11 @@ class BitbucketServer {
                 type: "boolean",
                 description:
                   "Whether to create this comment as a pending comment (draft state)",
+              },
+              parent_id: {
+                type: "string",
+                description:
+                  "Parent comment ID for creating threaded replies. When provided, creates a reply to the specified comment.",
               },
               inline: {
                 type: "object",
@@ -1998,7 +2003,8 @@ class BitbucketServer {
               args.pull_request_id as string,
               args.content as string,
               args.inline as InlineCommentInline,
-              args.pending as boolean
+              args.pending as boolean,
+              args.parent_id as string
             );
           case "addPendingPullRequestComment":
             return await this.addPendingPullRequestComment(
@@ -3036,7 +3042,8 @@ class BitbucketServer {
     pull_request_id: string,
     content: string,
     inline?: InlineCommentInline,
-    pending?: boolean
+    pending?: boolean,
+    parent_id?: string
   ) {
     try {
       logger.info("Adding comment to Bitbucket pull request", {
@@ -3044,6 +3051,7 @@ class BitbucketServer {
         repo_slug,
         pull_request_id,
         inline: inline ? "inline comment" : "general comment",
+        parent_id: parent_id ? `reply to comment ${parent_id}` : undefined,
       });
 
       // Prepare the comment data
@@ -3056,6 +3064,13 @@ class BitbucketServer {
       // Add pending flag if provided
       if (pending !== undefined) {
         commentData.pending = pending;
+      }
+
+      // Add parent information if provided (for threaded replies)
+      if (parent_id !== undefined) {
+        commentData.parent = {
+          id: parent_id,
+        };
       }
 
       // Add inline information if provided
