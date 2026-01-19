@@ -11,7 +11,9 @@ import {
   Comment,
   CommentListResult,
   InlineCommentData,
-  MergeOptions
+  MergeOptions,
+  Commit,
+  CommitListResult
 } from './adapter-types.js';
 import { PULL_REQUEST_STATE_MAP } from './field-mappings.js';
 import winston from 'winston';
@@ -163,8 +165,14 @@ export class DataCenterAdapter implements BitbucketAdapter {
     options?: PaginationOptions
   ): Promise<RepositoryListResult> {
     const params = this.buildPaginationParams(options);
-    const response = await this.api.get('/rest/api/1.0/repos', { params });
-    return this.normalizeRepositoryList(response.data);
+
+    if (workspace) {
+      const response = await this.api.get(`/rest/api/1.0/projects/${workspace}/repos`, { params });
+      return this.normalizeRepositoryList(response.data);
+    } else {
+      const response = await this.api.get('/rest/api/1.0/repos', { params });
+      return this.normalizeRepositoryList(response.data);
+    }
   }
 
   async getRepository(workspace: string, repoSlug: string): Promise<Repository> {
@@ -319,11 +327,21 @@ export class DataCenterAdapter implements BitbucketAdapter {
     const params = this.buildPaginationParams(options);
 
     const response = await this.api.get(
-      `/rest/api/1.0/projects/${project}/repos/${repo}/pull-requests/${prId}/comments`,
+      `/rest/api/1.0/projects/${project}/repos/${repo}/pull-requests/${prId}/activities`,
       { params }
     );
 
-    return this.normalizeCommentList(response.data);
+    const comments = response.data.values
+      .filter((activity: any) => activity.action === 'COMMENTED' && activity.comment)
+      .map((activity: any) => this.normalizeComment(activity.comment));
+
+    return {
+      values: comments,
+      size: comments.length,
+      page: response.data.start ? Math.floor(response.data.start / (response.data.limit || 25)) + 1 : 1,
+      pagelen: response.data.limit,
+      next: response.data.isLastPage ? undefined : 'next-page'
+    };
   }
 
   async approvePullRequest(
@@ -345,7 +363,6 @@ export class DataCenterAdapter implements BitbucketAdapter {
   ): Promise<PullRequest> {
     const [project, repo] = this.parseRepoSlug(repoSlug);
 
-    const currentPr = await this.getPullRequest(workspace, repoSlug, prId);
     const response = await this.api.get(
       `/rest/api/1.0/projects/${project}/repos/${repo}/pull-requests/${prId}`
     );
@@ -364,5 +381,88 @@ export class DataCenterAdapter implements BitbucketAdapter {
     );
 
     return this.normalizePullRequest(mergeResponse.data);
+  }
+
+  private normalizeCommit(dcCommit: any): Commit {
+    return {
+      hash: dcCommit.id,
+      message: dcCommit.message || '',
+      author: {
+        raw: dcCommit.author?.name || ''
+      },
+      date: dcCommit.authorTimestamp ? new Date(dcCommit.authorTimestamp).toISOString() : ''
+    };
+  }
+
+  private normalizeCommitList(dcResponse: any): CommitListResult {
+    const values = (dcResponse.values || []).map((commit: any) => this.normalizeCommit(commit));
+
+    return {
+      values,
+      size: dcResponse.size,
+      page: dcResponse.start ? Math.floor(dcResponse.start / (dcResponse.limit || 25)) + 1 : 1,
+      pagelen: dcResponse.limit,
+      next: dcResponse.isLastPage ? undefined : 'next-page'
+    };
+  }
+
+  async getPullRequestDiff(
+    workspace: string,
+    repoSlug: string,
+    prId: string
+  ): Promise<string> {
+    const [project, repo] = this.parseRepoSlug(repoSlug);
+    const response = await this.api.get(
+      `/rest/api/1.0/projects/${project}/repos/${repo}/pull-requests/${prId}/diff`
+    );
+
+    if (typeof response.data === 'string') {
+      return response.data;
+    }
+
+    const diffData = response.data;
+    let diffText = '';
+
+    for (const diff of diffData.diffs || []) {
+      const srcPath = diff.source?.toString || '';
+      const dstPath = diff.destination?.toString || '';
+
+      diffText += `diff --git a/${srcPath} b/${dstPath}\n`;
+
+      for (const hunk of diff.hunks || []) {
+        diffText += `@@ -${hunk.sourceLine},${hunk.sourceSpan} +${hunk.destinationLine},${hunk.destinationSpan} @@\n`;
+
+        for (const segment of hunk.segments || []) {
+          for (const line of segment.lines || []) {
+            if (segment.type === 'REMOVED') {
+              diffText += `-${line.line}\n`;
+            } else if (segment.type === 'ADDED') {
+              diffText += `+${line.line}\n`;
+            } else {
+              diffText += ` ${line.line}\n`;
+            }
+          }
+        }
+      }
+    }
+
+    return diffText;
+  }
+
+  async getPullRequestCommits(
+    workspace: string,
+    repoSlug: string,
+    prId: string,
+    options?: PaginationOptions
+  ): Promise<CommitListResult> {
+    const [project, repo] = this.parseRepoSlug(repoSlug);
+    const params = this.buildPaginationParams(options);
+
+    const response = await this.api.get(
+      `/rest/api/1.0/projects/${project}/repos/${repo}/pull-requests/${prId}/commits`,
+      { params }
+    );
+
+    return this.normalizeCommitList(response.data);
   }
 }

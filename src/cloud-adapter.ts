@@ -11,7 +11,8 @@ import {
   Comment,
   CommentListResult,
   InlineCommentData,
-  MergeOptions
+  MergeOptions,
+  CommitListResult
 } from './adapter-types.js';
 import { BitbucketPaginator } from './pagination.js';
 import winston from 'winston';
@@ -223,5 +224,36 @@ export class CloudAdapter implements BitbucketAdapter {
     );
 
     return response.data as PullRequest;
+  }
+
+  async getPullRequestDiff(
+    workspace: string,
+    repoSlug: string,
+    prId: string
+  ): Promise<string> {
+    const response = await this.api.get(
+      `/repositories/${workspace}/${repoSlug}/pullrequests/${prId}/diff`,
+      { responseType: 'text' }
+    );
+    return response.data;
+  }
+
+  async getPullRequestCommits(
+    workspace: string,
+    repoSlug: string,
+    prId: string,
+    options?: PaginationOptions
+  ): Promise<CommitListResult> {
+    const result = await this.paginator.fetchValues(
+      `/repositories/${workspace}/${repoSlug}/pullrequests/${prId}/commits`,
+      {
+        pagelen: options?.pagelen ?? options?.limit,
+        page: options?.page,
+        all: options?.all,
+        description: 'getPullRequestCommits'
+      }
+    );
+
+    return result as CommitListResult;
   }
 }

@@ -105,6 +105,19 @@ export interface MergeOptions {
   strategy?: 'merge-commit' | 'squash' | 'fast-forward';
 }
 
+export interface Commit {
+  hash: string;
+  message: string;
+  author: {
+    raw: string;
+  };
+  date: string;
+}
+
+export interface CommitListResult extends PaginationResult {
+  values: Commit[];
+}
+
 export interface BitbucketAdapter {
   listRepositories(
     workspace: string,
@@ -138,6 +151,19 @@ export interface BitbucketAdapter {
     prId: string,
     data: UpdatePullRequestData
   ): Promise<PullRequest>;
+
+  getPullRequestDiff(
+    workspace: string,
+    repoSlug: string,
+    prId: string
+  ): Promise<string>;
+
+  getPullRequestCommits(
+    workspace: string,
+    repoSlug: string,
+    prId: string,
+    options?: PaginationOptions
+  ): Promise<CommitListResult>;
 
   addPullRequestComment(
     workspace: string,

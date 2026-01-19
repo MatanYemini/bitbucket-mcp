@@ -592,13 +592,13 @@ class BitbucketServer {
       tools: [
         {
           name: "listRepositories",
-          description: "List Bitbucket repositories",
+          description: "List Bitbucket repositories. For Cloud: workspace is required. For Data Center: workspace parameter is treated as project key (optional, omit to list all repos).",
           inputSchema: {
             type: "object",
             properties: {
               workspace: {
                 type: "string",
-                description: "Bitbucket workspace name",
+                description: "Bitbucket Cloud: workspace name (required). Bitbucket Data Center: project key (optional)",
               },
               name: {
                 type: "string",
@@ -2305,17 +2305,17 @@ class BitbucketServer {
     legacyLimit?: number
   ) {
     try {
-      const wsName = workspace || this.config.defaultWorkspace;
+      const wsName = workspace || this.config.defaultWorkspace || '';
 
-      if (!wsName) {
+      if (this.apiType === BitbucketApiType.CLOUD && !wsName) {
         throw new McpError(
           ErrorCode.InvalidParams,
-          "Workspace must be provided either as a parameter or through BITBUCKET_WORKSPACE environment variable"
+          "Workspace must be provided either as a parameter or through BITBUCKET_WORKSPACE environment variable for Bitbucket Cloud"
         );
       }
 
       logger.info("Listing Bitbucket repositories", {
-        workspace: wsName,
+        [this.apiType === BitbucketApiType.DATA_CENTER ? 'project' : 'workspace']: wsName || 'all',
         pagelen: pagelen ?? legacyLimit,
         page,
         all,
@@ -2425,23 +2425,14 @@ class BitbucketServer {
         pagelen: pagelen ?? legacyLimit,
         page,
         all,
+        apiType: this.apiType
       });
 
-      const params: Record<string, any> = {};
-      if (state) {
-        params.state = state;
-      }
-
-      const result = await this.paginator.fetchValues<BitbucketPullRequest>(
-        `/repositories/${workspace}/${repo_slug}/pullrequests`,
-        {
-          pagelen: pagelen ?? legacyLimit,
-          page,
-          all,
-          params,
-          description: "getPullRequests",
-        }
-      );
+      const result = await this.adapter.getPullRequests(workspace, repo_slug, state, {
+        pagelen: pagelen ?? legacyLimit,
+        page,
+        all
+      });
 
       return {
         content: [
@@ -2482,62 +2473,23 @@ class BitbucketServer {
         title,
         sourceBranch,
         targetBranch,
+        apiType: this.apiType
       });
 
-      // Prepare reviewers format if provided
-      // Bitbucket API expects reviewers as array of objects: [{uuid: "{...}"}]
-      // Input is string array of UUIDs: ["{04776764-62c7-453b-b97e-302f60395ceb}", ...]
-      // Convert to API format: [{uuid: "{...}"}, ...]
-      let reviewersArray: Array<{ uuid: string }> | undefined;
-
-      if (reviewers && reviewers.length > 0) {
-        reviewersArray = reviewers
-          .filter((uuid) => typeof uuid === "string" && uuid.trim().length > 0)
-          .map((uuid) => ({ uuid: uuid.trim() }));
-
-        if (reviewersArray.length === 0) {
-          reviewersArray = undefined;
-        }
-      }
-
-      // Build request payload - only include reviewers if provided
-      const requestPayload: Record<string, any> = {
+      const pullRequest = await this.adapter.createPullRequest(workspace, repo_slug, {
         title,
         description,
-        source: {
-          branch: {
-            name: sourceBranch,
-          },
-        },
-        destination: {
-          branch: {
-            name: targetBranch,
-          },
-        },
-        close_source_branch: true,
-      };
-
-      // Only include reviewers field if there are reviewers to add
-      if (reviewersArray && reviewersArray.length > 0) {
-        requestPayload.reviewers = reviewersArray;
-      }
-
-      // Only include draft field if explicitly set to true
-      if (draft === true) {
-        requestPayload.draft = true;
-      }
-
-      // Create the pull request
-      const response = await this.api.post(
-        `/repositories/${workspace}/${repo_slug}/pullrequests`,
-        requestPayload
-      );
+        sourceBranch,
+        targetBranch,
+        reviewers,
+        draft
+      });
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data, null, 2),
+            text: JSON.stringify(pullRequest, null, 2),
           },
         ],
       };
@@ -2565,17 +2517,16 @@ class BitbucketServer {
         workspace,
         repo_slug,
         pull_request_id,
+        apiType: this.apiType
       });
 
-      const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`
-      );
+      const pullRequest = await this.adapter.getPullRequest(workspace, repo_slug, pull_request_id);
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data, null, 2),
+            text: JSON.stringify(pullRequest, null, 2),
           },
         ],
       };
@@ -2606,23 +2557,19 @@ class BitbucketServer {
         workspace,
         repo_slug,
         pull_request_id,
+        apiType: this.apiType
       });
 
-      // Only include fields that are provided
-      const updateData: Record<string, any> = {};
-      if (title !== undefined) updateData.title = title;
-      if (description !== undefined) updateData.description = description;
-
-      const response = await this.api.put(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`,
-        updateData
-      );
+      const pullRequest = await this.adapter.updatePullRequest(workspace, repo_slug, pull_request_id, {
+        title,
+        description
+      });
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data, null, 2),
+            text: JSON.stringify(pullRequest, null, 2),
           },
         ],
       };
@@ -2702,17 +2649,16 @@ class BitbucketServer {
         workspace,
         repo_slug,
         pull_request_id,
+        apiType: this.apiType
       });
 
-      const response = await this.api.post(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/approve`
-      );
+      await this.adapter.approvePullRequest(workspace, repo_slug, pull_request_id);
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data, null, 2),
+            text: "Pull request approved successfully.",
           },
         ],
       };
@@ -2827,23 +2773,19 @@ class BitbucketServer {
         repo_slug,
         pull_request_id,
         strategy,
+        apiType: this.apiType
       });
 
-      // Build request data
-      const data: Record<string, any> = {};
-      if (message) data.message = message;
-      if (strategy) data.merge_strategy = strategy;
-
-      const response = await this.api.post(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/merge`,
-        data
-      );
+      const pullRequest = await this.adapter.mergePullRequest(workspace, repo_slug, pull_request_id, {
+        message,
+        strategy
+      });
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data, null, 2),
+            text: JSON.stringify(pullRequest, null, 2),
           },
         ],
       };
@@ -2878,17 +2820,14 @@ class BitbucketServer {
         pagelen,
         page,
         all,
+        apiType: this.apiType
       });
 
-      const result = await this.paginator.fetchValues(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments`,
-        {
-          pagelen,
-          page,
-          all,
-          description: "getPullRequestComments",
-        }
-      );
+      const result = await this.adapter.getPullRequestComments(workspace, repo_slug, pull_request_id, {
+        pagelen,
+        page,
+        all
+      });
 
       return {
         content: [
@@ -2925,31 +2864,17 @@ class BitbucketServer {
         pull_request_id,
       });
 
-      // First get the pull request details to extract commit information
-      const prResponse = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`
+      const diff = await this.adapter.getPullRequestDiff(
+        workspace,
+        repo_slug,
+        pull_request_id
       );
-
-      const sourceCommit = prResponse.data.source.commit.hash;
-      const destinationCommit = prResponse.data.destination.commit.hash;
-
-      // Construct the correct diff URL with the proper format
-      // The format is: /repositories/{workspace}/{repo_slug}/diff/{source_repo}:{source_commit}%0D{destination_commit}?from_pullrequest_id={pr_id}&topic=true
-      const diffUrl = `/repositories/${workspace}/${repo_slug}/diff/${workspace}/${repo_slug}:${sourceCommit}%0D${destinationCommit}?from_pullrequest_id=${pull_request_id}&topic=true`;
-
-      const response = await this.api.get(diffUrl, {
-        headers: {
-          Accept: "text/plain",
-        },
-        responseType: "text",
-        maxRedirects: 5, // Enable redirect following
-      });
 
       return {
         content: [
           {
             type: "text",
-            text: response.data,
+            text: diff,
           },
         ],
       };
@@ -2986,14 +2911,11 @@ class BitbucketServer {
         all,
       });
 
-      const result = await this.paginator.fetchValues(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/commits`,
-        {
-          pagelen,
-          page,
-          all,
-          description: "getPullRequestCommits",
-        }
+      const result = await this.adapter.getPullRequestCommits(
+        workspace,
+        repo_slug,
+        pull_request_id,
+        { pagelen, page, all }
       );
 
       return {
@@ -3033,45 +2955,26 @@ class BitbucketServer {
         repo_slug,
         pull_request_id,
         inline: inline ? "inline comment" : "general comment",
+        apiType: this.apiType
       });
 
-      // Prepare the comment data
-      const commentData: any = {
-        content: {
-          raw: content,
-        },
-      };
-
-      // Add pending flag if provided
-      if (pending !== undefined) {
-        commentData.pending = pending;
-      }
-
-      // Add inline information if provided
-      if (inline) {
-        commentData.inline = {
+      const comment = await this.adapter.addPullRequestComment(
+        workspace,
+        repo_slug,
+        pull_request_id,
+        content,
+        inline ? {
           path: inline.path,
-        };
-
-        // Add line number information based on the type
-        if (inline.from !== undefined) {
-          commentData.inline.from = inline.from;
-        }
-        if (inline.to !== undefined) {
-          commentData.inline.to = inline.to;
-        }
-      }
-
-      const response = await this.api.post(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments`,
-        commentData
+          from: inline.from,
+          to: inline.to
+        } : undefined
       );
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response.data, null, 2),
+            text: JSON.stringify(comment, null, 2),
           },
         ],
       };
