@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "bitbucket": {
+      "command": "npx",
+      "env": {
+        "BITBUCKET_URL": "http://192.168.15.110:8080/rest/api/1.0/projects"
+      },
+      "args": [
+        "-y",
+        "bitbucket-mcp@latest"
+      ],
+      "disabled": true
+    }
+  }
+}

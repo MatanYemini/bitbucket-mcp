@@ -61,12 +61,12 @@ This implementation plan adds Bitbucket Data Center (version 7.5.0+) support to 
   - Ensure all tests pass, ask the user if questions arise.
 
 - [-] 5. Implement DataCenterAdapter core functionality
-  - [-] 5.1 Create DataCenterAdapter class skeleton
+  - [x] 5.1 Create DataCenterAdapter class skeleton
     - Implement constructor with AxiosInstance and config
     - Add helper methods (parseRepoSlug, buildPaginationParams)
     - _Requirements: 3.2_
   
-  - [ ] 5.2 Implement repository operations
+  - [x] 5.2 Implement repository operations
     - Implement listRepositories with DC endpoint
     - Implement getRepository with project/repo extraction
     - Add repository response normalization
