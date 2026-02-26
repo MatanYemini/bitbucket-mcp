@@ -4500,7 +4500,7 @@ class BitbucketServer {
       }
 
       const response = resolved
-        ? await this.api.post(resolveUrl(targetCommentId))
+        ? await this.api.post(resolveUrl(targetCommentId), {})
         : await this.api.delete(resolveUrl(targetCommentId));
 
       const responseText =
