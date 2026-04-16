@@ -1745,11 +1745,6 @@ class BitbucketServer {
                 type: "number",
                 description: "Optional comment ID to attach the task",
               },
-              state: {
-                type: "string",
-                enum: ["OPEN", "RESOLVED"],
-                description: "Initial task state",
-              },
             },
             required: ["workspace", "repo_slug", "pull_request_id", "content"],
           },
@@ -1793,7 +1788,7 @@ class BitbucketServer {
               content: { type: "string", description: "Updated task content" },
               state: {
                 type: "string",
-                enum: ["OPEN", "RESOLVED"],
+                enum: ["UNRESOLVED", "RESOLVED"],
                 description: "Updated task state",
               },
             },
@@ -2220,8 +2215,7 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.content as string,
-              args.comment as number,
-              args.state as "OPEN" | "RESOLVED"
+              args.comment as number
             );
           case "getPullRequestTask":
             return await this.getPullRequestTask(
@@ -2237,7 +2231,7 @@ class BitbucketServer {
               args.pull_request_id as string,
               args.task_id as string,
               args.content as string | undefined,
-              args.state as ("OPEN" | "RESOLVED") | undefined
+              args.state as ("UNRESOLVED" | "RESOLVED") | undefined
             );
           case "deletePullRequestTask":
             return await this.deletePullRequestTask(
@@ -4679,8 +4673,7 @@ class BitbucketServer {
     repo_slug: string,
     pull_request_id: string,
     content: string,
-    commentId?: number,
-    state?: "OPEN" | "RESOLVED"
+    commentId?: number
   ) {
     try {
       logger.info("Creating pull request task", {
@@ -4689,9 +4682,8 @@ class BitbucketServer {
         pull_request_id,
       });
 
-      const data: Record<string, any> = { content };
+      const data: Record<string, any> = { content: { raw: content } };
       if (commentId) data.comment = { id: commentId };
-      if (state) data.state = state;
 
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/tasks`,
@@ -4765,7 +4757,7 @@ class BitbucketServer {
     pull_request_id: string,
     task_id: string,
     content?: string,
-    state?: "OPEN" | "RESOLVED"
+    state?: "UNRESOLVED" | "RESOLVED"
   ) {
     try {
       logger.info("Updating pull request task", {
@@ -4776,7 +4768,7 @@ class BitbucketServer {
       });
 
       const data: Record<string, any> = {};
-      if (content !== undefined) data.content = content;
+      if (content !== undefined) data.content = { raw: content };
       if (state !== undefined) data.state = state;
 
       const response = await this.api.put(
