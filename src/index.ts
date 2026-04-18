@@ -2708,8 +2708,11 @@ class BitbucketServer {
         pull_request_id,
       });
 
+      // Bitbucket Cloud returns 400 when this POST carries no body or no
+      // Content-Type. Pass `{}` so axios infers `application/json`.
       const response = await this.api.post(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/approve`
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/approve`,
+        {}
       );
 
       return {
@@ -4055,8 +4058,11 @@ class BitbucketServer {
         pipeline_uuid,
       });
 
+      // Bitbucket Cloud returns 400 when this POST carries no body or no
+      // Content-Type. Pass `{}` so axios infers `application/json`.
       const response = await this.api.post(
-        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/stop`
+        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/stop`,
+        {}
       );
 
       return {
@@ -4499,8 +4505,11 @@ class BitbucketServer {
         targetCommentId = comment_id;
       }
 
+      // Bitbucket Cloud requires POST /resolve to carry a JSON body (at minimum `{}`)
+      // and a matching Content-Type header; otherwise the gateway returns 400.
+      // Pass an explicit empty-object body so axios sets `Content-Type: application/json`.
       const response = resolved
-        ? await this.api.post(resolveUrl(targetCommentId))
+        ? await this.api.post(resolveUrl(targetCommentId), {})
         : await this.api.delete(resolveUrl(targetCommentId));
 
       const responseText =
