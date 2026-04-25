@@ -1347,6 +1347,11 @@ class BitbucketServer {
                 enum: ["manual", "push", "pullrequest", "schedule"],
                 description: "Filter pipelines by trigger type",
               },
+              sort: {
+                type: "string",
+                description:
+                  "Field to sort by. Prefix with '-' for descending order. Supported fields: created_on, creator.uuid. Example: '-created_on' for newest first.",
+              },
             },
             required: ["workspace", "repo_slug"],
           },
@@ -2110,7 +2115,8 @@ class BitbucketServer {
                 | "push"
                 | "pullrequest"
                 | "schedule",
-              args.limit as number
+              args.limit as number,
+              args.sort as string
             );
           case "getPipelineRun":
             return await this.getPipelineRun(
@@ -3886,7 +3892,8 @@ class BitbucketServer {
       | "STOPPED",
     target_branch?: string,
     trigger_type?: "manual" | "push" | "pullrequest" | "schedule",
-    legacyLimit?: number
+    legacyLimit?: number,
+    sort?: string
   ) {
     try {
       logger.info("Listing pipeline runs", {
@@ -3898,12 +3905,14 @@ class BitbucketServer {
         status,
         target_branch,
         trigger_type,
+        sort,
       });
 
       const params: Record<string, any> = {};
       if (status) params.status = status;
       if (target_branch) params["target.branch"] = target_branch;
       if (trigger_type) params.trigger_type = trigger_type;
+      if (sort) params.sort = sort;
 
       const result = await this.paginator.fetchValues(
         `/repositories/${workspace}/${repo_slug}/pipelines`,
