@@ -60,7 +60,7 @@
     "@types/jest": "^29.5.11",
     "@types/node": "^20.11.24",
     "@typescript-eslint/eslint-plugin": "^7.0.2",
-    "@typescript-eslint/parser": "^7.0.2",
+    "@typescript-eslint/parser": "^8.59.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "eslint": "^8.56.0",
