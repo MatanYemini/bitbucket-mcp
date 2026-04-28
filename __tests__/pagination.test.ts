@@ -30,6 +30,7 @@ describe("BitbucketPaginator", () => {
 
     expect(axios.get).toHaveBeenCalledWith("/test", {
       params: { pagelen: 1, page: 1 },
+      maxRedirects: 5,
     });
     expect(result.values).toHaveLength(1);
     expect(result.page).toBe(1);
@@ -48,6 +49,7 @@ describe("BitbucketPaginator", () => {
 
     expect(axios.get).toHaveBeenCalledWith("/test", {
       params: { pagelen: BITBUCKET_MAX_PAGELEN },
+      maxRedirects: 5,
     });
   });
 
@@ -71,11 +73,12 @@ describe("BitbucketPaginator", () => {
 
     expect(axios.get).toHaveBeenNthCalledWith(1, "/test", {
       params: { pagelen: 10 },
+      maxRedirects: 5,
     });
     expect(axios.get).toHaveBeenNthCalledWith(
       2,
       "https://api.bitbucket.org/2.0/test?page=2",
-      undefined
+      { maxRedirects: 5 }
     );
     expect(result.values.map((item) => item.id)).toEqual([1, 2]);
     expect(result.fetchedPages).toBe(2);

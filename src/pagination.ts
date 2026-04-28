@@ -159,7 +159,12 @@ export class BitbucketPaginator {
       params: request.params,
       ...extra,
     });
-    const config = request.params ? { params: request.params } : undefined;
+    // Some Bitbucket endpoints (e.g., /pullrequests/{id}/diffstat) return 302
+    // redirects to the actual resource URL. We need to follow these redirects.
+    const config = {
+      ...(request.params && { params: request.params }),
+      maxRedirects: 5,
+    };
     return this.api.get(request.url, config);
   }
 
