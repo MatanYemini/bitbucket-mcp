@@ -4722,9 +4722,9 @@ class BitbucketServer {
         pull_request_id,
       });
 
-      const data: Record<string, any> = { content };
+      const data: Record<string, any> = { content: { raw: content } };
       if (commentId) data.comment = { id: commentId };
-      if (state) data.state = state;
+      if (state) data.pending = state !== "RESOLVED";
 
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/tasks`,
@@ -4807,8 +4807,8 @@ class BitbucketServer {
       });
 
       const data: Record<string, any> = {};
-      if (content !== undefined) data.content = content;
-      if (state !== undefined) data.state = state;
+      if (content !== undefined) data.content = { raw: content };
+      if (state !== undefined) data.state = state === "OPEN" ? "UNRESOLVED" : "RESOLVED";
 
       const response = await this.api.put(`/tasks/${task_id}`, data);
 
