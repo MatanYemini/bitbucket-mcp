@@ -2722,11 +2722,10 @@ class BitbucketServer {
         pull_request_id,
       });
 
-      // Bitbucket Cloud returns 400 when this POST carries no body or no
-      // Content-Type. Pass `{}` so axios infers `application/json`.
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/approve`,
-        {}
+        null,
+        { headers: { "Content-Type": undefined } }
       );
 
       return {
