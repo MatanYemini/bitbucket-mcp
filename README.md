@@ -101,6 +101,7 @@ Configure the server using the following environment variables:
 | `BITBUCKET_TOKEN`            | Your Bitbucket access token (alternative to username/password)                 | No       |
 | `BITBUCKET_WORKSPACE`        | Default workspace to use. If omitted and `BITBUCKET_URL` contains it, auto-set | No       |
 | `BITBUCKET_ENABLE_DANGEROUS` | Set to `true` to enable dangerous tools (e.g., deletions). Default: disabled   | No       |
+| `BITBUCKET_ENABLE_LOCAL_UPLOADS` | Set to `true` to enable tools that read local image files or clipboard images | No       |
 | `BITBUCKET_LOG_DISABLE`      | Disable file logging when set to `true`/`1`                                    | No       |
 | `BITBUCKET_LOG_FILE`         | Absolute path to a specific log file                                           | No       |
 | `BITBUCKET_LOG_DIR`          | Directory to store logs (defaults to OS-specific app log dir)                  | No       |
@@ -190,7 +191,8 @@ If you're developing locally and want to test your changes:
     "BITBUCKET_URL": "https://api.bitbucket.org/2.0",
     "BITBUCKET_WORKSPACE": "your-workspace",
     "BITBUCKET_USERNAME": "your-username",
-    "BITBUCKET_PASSWORD": "your-app-password"
+    "BITBUCKET_PASSWORD": "your-app-password",
+    "BITBUCKET_ENABLE_LOCAL_UPLOADS": "true"
   },
   "args": ["/path/to/your/local/bitbucket-mcp/dist/index.js"]
 }
@@ -451,6 +453,94 @@ addPullRequestComment(workspace, repo, pr_id, "Consider error handling here", {
   to: 25,
 });
 ```
+
+#### `uploadDownloadFile`
+
+Uploads a local screenshot/image file to a repository's Bitbucket Downloads.
+
+Requires `BITBUCKET_ENABLE_LOCAL_UPLOADS=true` and a Bitbucket credential with repository write permission.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `file_path`: Absolute path to a local image file (`.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`)
+- `filename` (optional): Upload filename. Defaults to a generated unique filename using the original extension.
+
+#### `commentPullRequestWithScreenshot`
+
+Uploads a local screenshot/image file to Bitbucket Downloads and creates a pull request comment with markdown image syntax.
+
+Requires `BITBUCKET_ENABLE_LOCAL_UPLOADS=true` and a Bitbucket credential with repository write permission.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pull_request_id`: Pull request ID
+- `file_path`: Absolute path to a local image file (`.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`)
+- `content` (optional): Markdown text to place before the screenshot
+- `filename` (optional): Upload filename. Defaults to a generated unique filename using the original extension.
+
+#### `uploadClipboardScreenshot`
+
+Uploads the current macOS clipboard image to a repository's Bitbucket Downloads.
+
+Requires `BITBUCKET_ENABLE_LOCAL_UPLOADS=true`, a Bitbucket credential with repository write permission, and `pngpaste` installed:
+
+```bash
+brew install pngpaste
+```
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `filename` (optional): Upload filename. Defaults to a generated PNG filename.
+
+#### `commentPullRequestWithClipboardScreenshot`
+
+Uploads the current macOS clipboard image to Bitbucket Downloads and creates a pull request comment with markdown image syntax.
+
+Requires `BITBUCKET_ENABLE_LOCAL_UPLOADS=true`, a Bitbucket credential with repository write permission, and `pngpaste` installed.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pull_request_id`: Pull request ID
+- `content` (optional): Markdown text to place before the screenshot
+- `filename` (optional): Upload filename. Defaults to a generated PNG filename.
+
+#### `uploadImageData`
+
+Uploads image bytes provided as raw base64 or a `data:image/...;base64,...` URL to a repository's Bitbucket Downloads. Useful when an AI agent passes a chat-attached image directly to the MCP tool without writing it to disk. Works on any OS and requires no extra apps.
+
+Requires `BITBUCKET_ENABLE_LOCAL_UPLOADS=true` and a Bitbucket credential with repository write permission.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `image_data`: Raw base64 image bytes or a `data:image/...;base64,...` URL (`.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`)
+- `image_mime_type` (optional): MIME type for raw base64 input (e.g. `image/png`). Ignored when `image_data` is a data URL.
+- `filename` (optional): Upload filename. Defaults to a generated filename using the detected image extension.
+
+#### `commentPullRequestWithImageData`
+
+Uploads image bytes provided as raw base64 or a `data:image/...;base64,...` URL to Bitbucket Downloads and creates a pull request comment with markdown image syntax. Useful when an AI agent passes a chat-attached image directly to the MCP tool.
+
+Requires `BITBUCKET_ENABLE_LOCAL_UPLOADS=true` and a Bitbucket credential with repository write permission.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pull_request_id`: Pull request ID
+- `image_data`: Raw base64 image bytes or a `data:image/...;base64,...` URL (`.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`)
+- `image_mime_type` (optional): MIME type for raw base64 input (e.g. `image/png`). Ignored when `image_data` is a data URL.
+- `content` (optional): Markdown text to place before the image
+- `filename` (optional): Upload filename. Defaults to a generated filename using the detected image extension.
 
 #### `getPullRequestComment`
 

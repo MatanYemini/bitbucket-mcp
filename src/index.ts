@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import "dotenv/config";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -8,16 +7,21 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import axios, { AxiosInstance, AxiosError } from "axios";
-import winston from "winston";
+import axios, { type AxiosInstance } from "axios";
+import { execFile } from "child_process";
+import "dotenv/config";
+import { fileTypeFromBuffer } from "file-type";
+import FormData from "form-data";
+import fs from "fs";
 import os from "os";
 import path from "path";
-import fs from "fs";
+import { promisify } from "util";
+import winston from "winston";
 import {
-  BitbucketPaginator,
   BITBUCKET_ALL_ITEMS_CAP,
   BITBUCKET_DEFAULT_PAGELEN,
   BITBUCKET_MAX_PAGELEN,
+  BitbucketPaginator,
 } from "./pagination.js";
 
 // =========== LOGGER SETUP ==========
@@ -110,6 +114,33 @@ const LEGACY_LIMIT_SCHEMA = {
   type: "number",
   description:
     "Deprecated alias for pagelen. Use pagelen/page/all for pagination control.",
+};
+
+const execFileAsync = promisify(execFile);
+
+const MAX_LOCAL_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+const ALLOWED_LOCAL_UPLOAD_EXTENSIONS = new Set([
+  ".gif",
+  ".jpeg",
+  ".jpg",
+  ".png",
+  ".webp",
+]);
+
+const SCREENSHOT_MIME_TYPES: Record<string, string> = {
+  ".gif": "image/gif",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+};
+
+const SCREENSHOT_EXTENSIONS_BY_MIME: Record<string, string> = {
+  "image/gif": ".gif",
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
 };
 
 // =========== TYPE DEFINITIONS ===========
@@ -327,7 +358,7 @@ interface BitbucketConfig {
 
 // Normalize Bitbucket configuration for backward compatibility and DX
 function normalizeBitbucketConfig(rawConfig: BitbucketConfig): BitbucketConfig {
-  let normalizedConfig = { ...rawConfig };
+  const normalizedConfig = { ...rawConfig };
   try {
     const parsed = new URL(rawConfig.baseUrl);
     const host = parsed.hostname.toLowerCase();
@@ -498,7 +529,7 @@ class BitbucketServer {
         capabilities: {
           tools: {},
         },
-      }
+      },
     );
 
     // Configuration from environment variables
@@ -532,7 +563,7 @@ class BitbucketServer {
       .toString()
       .toLowerCase();
     const allowDangerousCommands = ["1", "true", "yes", "on"].includes(
-      enableDangerousEnv
+      enableDangerousEnv,
     );
 
     this.config = { ...normalizedConfig, allowDangerousCommands };
@@ -544,7 +575,7 @@ class BitbucketServer {
 
     if (!this.config.token && !(this.config.username && this.config.password)) {
       throw new Error(
-        "Either BITBUCKET_TOKEN or BITBUCKET_USERNAME/PASSWORD is required"
+        "Either BITBUCKET_TOKEN or BITBUCKET_USERNAME/PASSWORD is required",
       );
     }
 
@@ -947,6 +978,197 @@ class BitbucketServer {
               },
             },
             required: ["workspace", "repo_slug", "pull_request_id", "content"],
+          },
+        },
+        {
+          name: "uploadDownloadFile",
+          description:
+            "Upload a local screenshot/image file to a repository's Bitbucket Downloads",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              file_path: {
+                type: "string",
+                description: "Absolute path to a local image file",
+              },
+              filename: {
+                type: "string",
+                description:
+                  "Optional upload filename. Defaults to a generated unique filename using the original extension.",
+              },
+            },
+            required: ["workspace", "repo_slug", "file_path"],
+          },
+        },
+        {
+          name: "commentPullRequestWithScreenshot",
+          description:
+            "Upload a local screenshot/image file to Bitbucket Downloads and comment on a pull request with the image markdown",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              file_path: {
+                type: "string",
+                description: "Absolute path to a local image file",
+              },
+              content: {
+                type: "string",
+                description:
+                  "Optional markdown text to place before the screenshot",
+              },
+              filename: {
+                type: "string",
+                description:
+                  "Optional upload filename. Defaults to a generated unique filename using the original extension.",
+              },
+            },
+            required: [
+              "workspace",
+              "repo_slug",
+              "pull_request_id",
+              "file_path",
+            ],
+          },
+        },
+        {
+          name: "uploadClipboardScreenshot",
+          description:
+            "Upload the current macOS clipboard image to a repository's Bitbucket Downloads. Requires pngpaste.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              filename: {
+                type: "string",
+                description:
+                  "Optional upload filename. Defaults to a generated PNG filename.",
+              },
+            },
+            required: ["workspace", "repo_slug"],
+          },
+        },
+        {
+          name: "commentPullRequestWithClipboardScreenshot",
+          description:
+            "Upload the current macOS clipboard image to Bitbucket Downloads and comment on a pull request with the image markdown. Requires pngpaste.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              content: {
+                type: "string",
+                description:
+                  "Optional markdown text to place before the screenshot",
+              },
+              filename: {
+                type: "string",
+                description:
+                  "Optional upload filename. Defaults to a generated PNG filename.",
+              },
+            },
+            required: ["workspace", "repo_slug", "pull_request_id"],
+          },
+        },
+        {
+          name: "uploadImageData",
+          description:
+            "Upload an image (PNG, JPEG, GIF, or WebP) provided as raw base64 or a data URL to a repository's Bitbucket Downloads. Useful for images attached in agent chat.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              image_data: {
+                type: "string",
+                description:
+                  "Image bytes as raw base64 or a data:image/...;base64,... URL",
+              },
+              image_mime_type: {
+                type: "string",
+                description:
+                  "Optional MIME type for raw base64 input (e.g. image/png). Ignored when image_data is a data URL.",
+              },
+              filename: {
+                type: "string",
+                description:
+                  "Optional upload filename. Defaults to a generated filename using the detected image extension.",
+              },
+            },
+            required: ["workspace", "repo_slug", "image_data"],
+          },
+        },
+        {
+          name: "commentPullRequestWithImageData",
+          description:
+            "Upload an image (PNG, JPEG, GIF, or WebP) provided as raw base64 or a data URL to Bitbucket Downloads and comment on a pull request with the image markdown. Useful for images attached in agent chat.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              image_data: {
+                type: "string",
+                description:
+                  "Image bytes as raw base64 or a data:image/...;base64,... URL",
+              },
+              image_mime_type: {
+                type: "string",
+                description:
+                  "Optional MIME type for raw base64 input (e.g. image/png). Ignored when image_data is a data URL.",
+              },
+              content: {
+                type: "string",
+                description:
+                  "Optional markdown text to place before the image",
+              },
+              filename: {
+                type: "string",
+                description:
+                  "Optional upload filename. Defaults to a generated filename using the detected image extension.",
+              },
+            },
+            required: [
+              "workspace",
+              "repo_slug",
+              "pull_request_id",
+              "image_data",
+            ],
           },
         },
         {
@@ -1869,7 +2091,7 @@ class BitbucketServer {
       ].filter(
         (tool) =>
           this.config.allowDangerousCommands === true ||
-          !this.isDangerousTool(tool.name)
+          !this.isDangerousTool(tool.name),
       ),
     }));
 
@@ -1889,7 +2111,7 @@ class BitbucketServer {
         ) {
           throw new McpError(
             ErrorCode.MethodNotFound,
-            `Tool ${toolName} is disabled. Set BITBUCKET_ENABLE_DANGEROUS=true to enable.`
+            `Tool ${toolName} is disabled. Set BITBUCKET_ENABLE_DANGEROUS=true to enable.`,
           );
         }
 
@@ -1901,12 +2123,12 @@ class BitbucketServer {
               args.page as number,
               args.all as boolean,
               args.name as string,
-              args.limit as number
+              args.limit as number,
             );
           case "getRepository":
             return await this.getRepository(
               args.workspace as string,
-              args.repo_slug as string
+              args.repo_slug as string,
             );
           case "getPullRequests":
             return await this.getPullRequests(
@@ -1916,7 +2138,7 @@ class BitbucketServer {
               args.pagelen as number,
               args.page as number,
               args.all as boolean,
-              args.limit as number
+              args.limit as number,
             );
           case "createPullRequest":
             return await this.createPullRequest(
@@ -1927,13 +2149,13 @@ class BitbucketServer {
               args.sourceBranch as string,
               args.targetBranch as string,
               args.reviewers as string[] | undefined,
-              args.draft as boolean
+              args.draft as boolean,
             );
           case "getPullRequest":
             return await this.getPullRequest(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
             );
           case "updatePullRequest":
             return await this.updatePullRequest(
@@ -1941,7 +2163,7 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.title as string,
-              args.description as string
+              args.description as string,
             );
           case "getPullRequestActivity":
             return await this.getPullRequestActivity(
@@ -1950,26 +2172,26 @@ class BitbucketServer {
               args.pull_request_id as string,
               args.pagelen as number,
               args.page as number,
-              args.all as boolean
+              args.all as boolean,
             );
           case "approvePullRequest":
             return await this.approvePullRequest(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
             );
           case "unapprovePullRequest":
             return await this.unapprovePullRequest(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
             );
           case "declinePullRequest":
             return await this.declinePullRequest(
               args.workspace as string,
               args.repo_slug as string,
               args.pull_request_id as string,
-              args.message as string
+              args.message as string,
             );
           case "mergePullRequest":
             return await this.mergePullRequest(
@@ -1977,7 +2199,7 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.message as string,
-              args.strategy as "merge-commit" | "squash" | "fast-forward"
+              args.strategy as "merge-commit" | "squash" | "fast-forward",
             );
           case "getPullRequestComments":
             return await this.getPullRequestComments(
@@ -1986,13 +2208,13 @@ class BitbucketServer {
               args.pull_request_id as string,
               args.pagelen as number,
               args.page as number,
-              args.all as boolean
+              args.all as boolean,
             );
           case "getPullRequestDiff":
             return await this.getPullRequestDiff(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
             );
           case "getPullRequestCommits":
             return await this.getPullRequestCommits(
@@ -2001,7 +2223,7 @@ class BitbucketServer {
               args.pull_request_id as string,
               args.pagelen as number,
               args.page as number,
-              args.all as boolean
+              args.all as boolean,
             );
           case "addPullRequestComment":
             return await this.addPullRequestComment(
@@ -2011,7 +2233,55 @@ class BitbucketServer {
               args.content as string,
               args.inline as InlineCommentInline,
               args.pending as boolean,
-              args.parent_id as number | undefined
+              args.parent_id as number | undefined,
+            );
+          case "uploadDownloadFile":
+            return await this.uploadDownloadFile(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.file_path as string,
+              args.filename as string | undefined,
+            );
+          case "commentPullRequestWithScreenshot":
+            return await this.commentPullRequestWithScreenshot(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.file_path as string,
+              args.content as string | undefined,
+              args.filename as string | undefined,
+            );
+          case "uploadClipboardScreenshot":
+            return await this.uploadClipboardScreenshot(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.filename as string | undefined,
+            );
+          case "commentPullRequestWithClipboardScreenshot":
+            return await this.commentPullRequestWithClipboardScreenshot(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.content as string | undefined,
+              args.filename as string | undefined,
+            );
+          case "uploadImageData":
+            return await this.uploadImageData(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.image_data as string,
+              args.image_mime_type as string | undefined,
+              args.filename as string | undefined,
+            );
+          case "commentPullRequestWithImageData":
+            return await this.commentPullRequestWithImageData(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.image_data as string,
+              args.image_mime_type as string | undefined,
+              args.content as string | undefined,
+              args.filename as string | undefined,
             );
           case "addPendingPullRequestComment":
             return await this.addPendingPullRequestComment(
@@ -2019,23 +2289,23 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.content as string,
-              args.inline as InlineCommentInline
+              args.inline as InlineCommentInline,
             );
           case "publishPendingComments":
             return await this.publishPendingComments(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
             );
           case "getRepositoryBranchingModel":
             return await this.getRepositoryBranchingModel(
               args.workspace as string,
-              args.repo_slug as string
+              args.repo_slug as string,
             );
           case "getRepositoryBranchingModelSettings":
             return await this.getRepositoryBranchingModelSettings(
               args.workspace as string,
-              args.repo_slug as string
+              args.repo_slug as string,
             );
           case "updateRepositoryBranchingModelSettings":
             return await this.updateRepositoryBranchingModelSettings(
@@ -2043,22 +2313,22 @@ class BitbucketServer {
               args.repo_slug as string,
               args.development as Record<string, any>,
               args.production as Record<string, any>,
-              args.branch_types as Array<Record<string, any>>
+              args.branch_types as Array<Record<string, any>>,
             );
           case "getEffectiveRepositoryBranchingModel":
             return await this.getEffectiveRepositoryBranchingModel(
               args.workspace as string,
-              args.repo_slug as string
+              args.repo_slug as string,
             );
           case "getProjectBranchingModel":
             return await this.getProjectBranchingModel(
               args.workspace as string,
-              args.project_key as string
+              args.project_key as string,
             );
           case "getProjectBranchingModelSettings":
             return await this.getProjectBranchingModelSettings(
               args.workspace as string,
-              args.project_key as string
+              args.project_key as string,
             );
           case "updateProjectBranchingModelSettings":
             return await this.updateProjectBranchingModelSettings(
@@ -2066,7 +2336,7 @@ class BitbucketServer {
               args.project_key as string,
               args.development as Record<string, any>,
               args.production as Record<string, any>,
-              args.branch_types as Array<Record<string, any>>
+              args.branch_types as Array<Record<string, any>>,
             );
           case "createDraftPullRequest":
             return await this.createDraftPullRequest(
@@ -2076,25 +2346,25 @@ class BitbucketServer {
               args.description as string,
               args.sourceBranch as string,
               args.targetBranch as string,
-              args.reviewers as string[]
+              args.reviewers as string[],
             );
           case "publishDraftPullRequest":
             return await this.publishDraftPullRequest(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
             );
           case "convertTodraft":
             return await this.convertTodraft(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
             );
           case "getPendingReviewPRs":
             return await this.getPendingReviewPRs(
               args.workspace as string | undefined,
               args.limit as number,
-              args.repositoryList as string[]
+              args.repositoryList as string[],
             );
           case "listPipelineRuns":
             return await this.listPipelineRuns(
@@ -2117,26 +2387,26 @@ class BitbucketServer {
                 | "pullrequest"
                 | "schedule",
               args.limit as number,
-              args.sort as string
+              args.sort as string,
             );
           case "getPipelineRun":
             return await this.getPipelineRun(
               args.workspace as string,
               args.repo_slug as string,
-              args.pipeline_uuid as string
+              args.pipeline_uuid as string,
             );
           case "runPipeline":
             return await this.runPipeline(
               args.workspace as string,
               args.repo_slug as string,
               args.target as any,
-              args.variables as any[]
+              args.variables as any[],
             );
           case "stopPipeline":
             return await this.stopPipeline(
               args.workspace as string,
               args.repo_slug as string,
-              args.pipeline_uuid as string
+              args.pipeline_uuid as string,
             );
           case "getPipelineSteps":
             return await this.getPipelineSteps(
@@ -2145,14 +2415,14 @@ class BitbucketServer {
               args.pipeline_uuid as string,
               args.pagelen as number,
               args.page as number,
-              args.all as boolean
+              args.all as boolean,
             );
           case "getPipelineStep":
             return await this.getPipelineStep(
               args.workspace as string,
               args.repo_slug as string,
               args.pipeline_uuid as string,
-              args.step_uuid as string
+              args.step_uuid as string,
             );
           case "getPipelineStepLogs":
             return await this.getPipelineStepLogs(
@@ -2164,14 +2434,14 @@ class BitbucketServer {
               args.tail as boolean | undefined,
               args.errors_only as boolean | undefined,
               args.search_term as string | undefined,
-              args.save_to_file as boolean | undefined
+              args.save_to_file as boolean | undefined,
             );
           case "getPullRequestComment":
             return await this.getPullRequestComment(
               args.workspace as string,
               args.repo_slug as string,
               args.pull_request_id as string,
-              args.comment_id as string
+              args.comment_id as string,
             );
           case "updatePullRequestComment":
             return await this.updatePullRequestComment(
@@ -2179,14 +2449,14 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.comment_id as string,
-              args.content as string
+              args.content as string,
             );
           case "deletePullRequestComment":
             return await this.deletePullRequestComment(
               args.workspace as string,
               args.repo_slug as string,
               args.pull_request_id as string,
-              args.comment_id as string
+              args.comment_id as string,
             );
           case "resolveComment":
             return await this.setCommentResolved(
@@ -2194,7 +2464,7 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.comment_id as string,
-              true
+              true,
             );
           case "reopenComment":
             return await this.setCommentResolved(
@@ -2202,7 +2472,7 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.comment_id as string,
-              false
+              false,
             );
           case "getPullRequestDiffStat":
             return await this.getPullRequestDiffStat(
@@ -2211,13 +2481,13 @@ class BitbucketServer {
               args.pull_request_id as string,
               args.pagelen as number,
               args.page as number,
-              args.all as boolean
+              args.all as boolean,
             );
           case "getPullRequestPatch":
             return await this.getPullRequestPatch(
               args.workspace as string,
               args.repo_slug as string,
-              args.pull_request_id as string
+              args.pull_request_id as string,
             );
           case "getPullRequestTasks":
             return await this.getPullRequestTasks(
@@ -2226,7 +2496,7 @@ class BitbucketServer {
               args.pull_request_id as string,
               args.pagelen as number,
               args.page as number,
-              args.all as boolean
+              args.all as boolean,
             );
           case "createPullRequestTask":
             return await this.createPullRequestTask(
@@ -2235,14 +2505,14 @@ class BitbucketServer {
               args.pull_request_id as string,
               args.content as string,
               args.comment as number,
-              args.state as "OPEN" | "RESOLVED"
+              args.state as "OPEN" | "RESOLVED",
             );
           case "getPullRequestTask":
             return await this.getPullRequestTask(
               args.workspace as string,
               args.repo_slug as string,
               args.pull_request_id as string,
-              args.task_id as string
+              args.task_id as string,
             );
           case "updatePullRequestTask":
             return await this.updatePullRequestTask(
@@ -2251,14 +2521,14 @@ class BitbucketServer {
               args.pull_request_id as string,
               args.task_id as string,
               args.content as string | undefined,
-              args.state as ("OPEN" | "RESOLVED") | undefined
+              args.state as ("OPEN" | "RESOLVED") | undefined,
             );
           case "deletePullRequestTask":
             return await this.deletePullRequestTask(
               args.workspace as string,
               args.repo_slug as string,
               args.pull_request_id as string,
-              args.task_id as string
+              args.task_id as string,
             );
           case "getPullRequestStatuses":
             return await this.getPullRequestStatuses(
@@ -2267,17 +2537,17 @@ class BitbucketServer {
               args.pull_request_id as string,
               args.pagelen as number,
               args.page as number,
-              args.all as boolean
+              args.all as boolean,
             );
           case "getEffectiveDefaultReviewers":
             return await this.getEffectiveDefaultReviewers(
               args.workspace as string,
-              args.repo_slug as string
+              args.repo_slug as string,
             );
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
-              `Unknown tool: ${request.params.name}`
+              `Unknown tool: ${request.params.name}`,
             );
         }
       } catch (error) {
@@ -2287,7 +2557,7 @@ class BitbucketServer {
             ErrorCode.InternalError,
             `Bitbucket API error: ${
               error.response?.data.message ?? error.message
-            }`
+            }`,
           );
         }
         throw error;
@@ -2301,7 +2571,7 @@ class BitbucketServer {
     page?: number,
     all?: boolean,
     name?: string,
-    legacyLimit?: number
+    legacyLimit?: number,
   ) {
     try {
       // Use default workspace if not provided
@@ -2310,7 +2580,7 @@ class BitbucketServer {
       if (!wsName) {
         throw new McpError(
           ErrorCode.InvalidParams,
-          "Workspace must be provided either as a parameter or through BITBUCKET_WORKSPACE environment variable"
+          "Workspace must be provided either as a parameter or through BITBUCKET_WORKSPACE environment variable",
         );
       }
 
@@ -2327,16 +2597,17 @@ class BitbucketServer {
         params.q = `name~"${name}"`;
       }
 
-      const repositories = await this.paginator.fetchValues<BitbucketRepository>(
-        `/repositories/${wsName}`,
-        {
-          pagelen: pagelen ?? legacyLimit,
-          page,
-          all,
-          params,
-          description: "listRepositories",
-        }
-      );
+      const repositories =
+        await this.paginator.fetchValues<BitbucketRepository>(
+          `/repositories/${wsName}`,
+          {
+            pagelen: pagelen ?? legacyLimit,
+            page,
+            all,
+            params,
+            description: "listRepositories",
+          },
+        );
 
       return {
         content: [
@@ -2352,7 +2623,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to list repositories: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2365,7 +2636,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}`
+        `/repositories/${workspace}/${repo_slug}`,
       );
 
       return {
@@ -2382,7 +2653,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get repository: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2395,7 +2666,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/effective-default-reviewers`
+        `/repositories/${workspace}/${repo_slug}/effective-default-reviewers`,
       );
 
       return {
@@ -2416,7 +2687,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get effective default reviewers: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2428,7 +2699,7 @@ class BitbucketServer {
     pagelen?: number,
     page?: number,
     all?: boolean,
-    legacyLimit?: number
+    legacyLimit?: number,
   ) {
     try {
       logger.info("Getting Bitbucket pull requests", {
@@ -2453,7 +2724,7 @@ class BitbucketServer {
           all,
           params,
           description: "getPullRequests",
-        }
+        },
       );
 
       return {
@@ -2474,7 +2745,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pull requests: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2487,7 +2758,7 @@ class BitbucketServer {
     sourceBranch: string,
     targetBranch: string,
     reviewers?: string[],
-    draft?: boolean
+    draft?: boolean,
   ) {
     try {
       logger.info("Creating Bitbucket pull request", {
@@ -2544,7 +2815,7 @@ class BitbucketServer {
       // Create the pull request
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pullrequests`,
-        requestPayload
+        requestPayload,
       );
 
       return {
@@ -2565,7 +2836,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to create pull request: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2573,7 +2844,7 @@ class BitbucketServer {
   async getPullRequest(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
   ) {
     try {
       logger.info("Getting Bitbucket pull request details", {
@@ -2583,7 +2854,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`,
       );
 
       return {
@@ -2605,7 +2876,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pull request details: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2615,7 +2886,7 @@ class BitbucketServer {
     repo_slug: string,
     pull_request_id: string,
     title?: string,
-    description?: string
+    description?: string,
   ) {
     try {
       logger.info("Updating Bitbucket pull request", {
@@ -2631,7 +2902,7 @@ class BitbucketServer {
 
       const response = await this.api.put(
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`,
-        updateData
+        updateData,
       );
 
       return {
@@ -2653,7 +2924,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to update pull request: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2664,7 +2935,7 @@ class BitbucketServer {
     pull_request_id: string,
     pagelen?: number,
     page?: number,
-    all?: boolean
+    all?: boolean,
   ) {
     try {
       logger.info("Getting Bitbucket pull request activity", {
@@ -2683,7 +2954,7 @@ class BitbucketServer {
           page,
           all,
           description: "getPullRequestActivity",
-        }
+        },
       );
 
       return {
@@ -2705,7 +2976,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pull request activity: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2713,7 +2984,7 @@ class BitbucketServer {
   async approvePullRequest(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
   ) {
     try {
       logger.info("Approving Bitbucket pull request", {
@@ -2726,7 +2997,7 @@ class BitbucketServer {
       // Content-Type. Pass `{}` so axios infers `application/json`.
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/approve`,
-        {}
+        {},
       );
 
       return {
@@ -2748,7 +3019,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to approve pull request: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2756,7 +3027,7 @@ class BitbucketServer {
   async unapprovePullRequest(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
   ) {
     try {
       logger.info("Unapproving Bitbucket pull request", {
@@ -2766,7 +3037,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.delete(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/approve`
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/approve`,
       );
 
       return {
@@ -2788,7 +3059,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to unapprove pull request: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2797,7 +3068,7 @@ class BitbucketServer {
     workspace: string,
     repo_slug: string,
     pull_request_id: string,
-    message?: string
+    message?: string,
   ) {
     try {
       logger.info("Declining Bitbucket pull request", {
@@ -2811,7 +3082,7 @@ class BitbucketServer {
 
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/decline`,
-        data
+        data,
       );
 
       return {
@@ -2833,7 +3104,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to decline pull request: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2843,7 +3114,7 @@ class BitbucketServer {
     repo_slug: string,
     pull_request_id: string,
     message?: string,
-    strategy?: "merge-commit" | "squash" | "fast-forward"
+    strategy?: "merge-commit" | "squash" | "fast-forward",
   ) {
     try {
       logger.info("Merging Bitbucket pull request", {
@@ -2860,7 +3131,7 @@ class BitbucketServer {
 
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/merge`,
-        data
+        data,
       );
 
       return {
@@ -2882,7 +3153,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to merge pull request: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2893,7 +3164,7 @@ class BitbucketServer {
     pull_request_id: string,
     pagelen?: number,
     page?: number,
-    all?: boolean
+    all?: boolean,
   ) {
     try {
       logger.info("Getting Bitbucket pull request comments", {
@@ -2912,7 +3183,7 @@ class BitbucketServer {
           page,
           all,
           description: "getPullRequestComments",
-        }
+        },
       );
 
       return {
@@ -2934,7 +3205,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pull request comments: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -2942,7 +3213,7 @@ class BitbucketServer {
   async getPullRequestDiff(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
   ) {
     try {
       logger.info("Getting Bitbucket pull request diff", {
@@ -2953,7 +3224,7 @@ class BitbucketServer {
 
       // First get the pull request details to extract commit information
       const prResponse = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`,
       );
 
       const sourceCommit = prResponse.data.source.commit.hash;
@@ -2990,7 +3261,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pull request diff: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3001,7 +3272,7 @@ class BitbucketServer {
     pull_request_id: string,
     pagelen?: number,
     page?: number,
-    all?: boolean
+    all?: boolean,
   ) {
     try {
       logger.info("Getting Bitbucket pull request commits", {
@@ -3020,7 +3291,7 @@ class BitbucketServer {
           page,
           all,
           description: "getPullRequestCommits",
-        }
+        },
       );
 
       return {
@@ -3042,7 +3313,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pull request commits: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3054,7 +3325,7 @@ class BitbucketServer {
     content: string,
     inline?: InlineCommentInline,
     pending?: boolean,
-    parent_id?: number
+    parent_id?: number,
   ) {
     try {
       logger.info("Adding comment to Bitbucket pull request", {
@@ -3064,8 +3335,8 @@ class BitbucketServer {
         mode: parent_id
           ? "threaded reply"
           : inline
-          ? "inline comment"
-          : "general comment",
+            ? "inline comment"
+            : "general comment",
       });
 
       // Prepare the comment data
@@ -3099,7 +3370,7 @@ class BitbucketServer {
 
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments`,
-        commentData
+        commentData,
       );
 
       return {
@@ -3121,8 +3392,576 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to add pull request comment: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
+    }
+  }
+
+  private ensureLocalUploadsEnabled() {
+    if (!isTruthyEnv(process.env.BITBUCKET_ENABLE_LOCAL_UPLOADS)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        "Local file upload tools are disabled. Set BITBUCKET_ENABLE_LOCAL_UPLOADS=true to enable them.",
+      );
+    }
+  }
+
+  private sanitizeUploadFilename(filename: string): string {
+    return path
+      .basename(filename)
+      .replace(/[^a-zA-Z0-9._-]/g, "-")
+      .replace(/-+/g, "-");
+  }
+
+  private createUploadFilenameFromExtension(
+    extension: string,
+    filename?: string,
+  ): string {
+    const requestedName = filename?.trim();
+    const rawName =
+      requestedName && requestedName.length > 0
+        ? requestedName
+        : `screenshot-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 8)}${extension}`;
+    const sanitizedName = this.sanitizeUploadFilename(rawName);
+    const uploadExtension = path.extname(sanitizedName).toLowerCase();
+
+    if (!ALLOWED_LOCAL_UPLOAD_EXTENSIONS.has(uploadExtension)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Only image files are supported: ${Array.from(
+          ALLOWED_LOCAL_UPLOAD_EXTENSIONS,
+        ).join(", ")}`,
+      );
+    }
+
+    return sanitizedName;
+  }
+
+  private createUploadFilename(filePath: string, filename?: string): string {
+    const sourceExtension = path.extname(filePath).toLowerCase();
+    return this.createUploadFilenameFromExtension(sourceExtension, filename);
+  }
+
+  private async detectImageType(
+    buffer: Buffer,
+  ): Promise<{ extension: string; contentType: string } | undefined> {
+    const detected = await fileTypeFromBuffer(buffer);
+    if (!detected) {
+      return undefined;
+    }
+
+    const extension = SCREENSHOT_EXTENSIONS_BY_MIME[detected.mime];
+    if (!extension) {
+      return undefined;
+    }
+
+    return { extension, contentType: detected.mime };
+  }
+
+  private async parseImageData(imageData: string, imageMimeType?: string) {
+    if (typeof imageData !== "string" || imageData.length === 0) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        "image_data is required and must be a non-empty string",
+      );
+    }
+
+    const trimmedImageData = imageData.trim();
+    const dataUrlMatch = trimmedImageData.match(
+      /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/s,
+    );
+    const contentTypeFromInput =
+      dataUrlMatch?.[1]?.toLowerCase() ?? imageMimeType?.trim().toLowerCase();
+    const base64Data = dataUrlMatch ? dataUrlMatch[2] : trimmedImageData;
+    const buffer = Buffer.from(base64Data.replace(/\s/g, ""), "base64");
+
+    if (buffer.length === 0) {
+      throw new McpError(ErrorCode.InvalidParams, "image_data is empty");
+    }
+
+    if (buffer.length > MAX_LOCAL_UPLOAD_BYTES) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Image is too large. Maximum size is ${
+          MAX_LOCAL_UPLOAD_BYTES / 1024 / 1024
+        } MB.`,
+      );
+    }
+
+    const detectedType = await this.detectImageType(buffer);
+    if (!detectedType) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        "image_data must be a PNG, JPEG, GIF, or WebP image",
+      );
+    }
+
+    if (
+      contentTypeFromInput &&
+      SCREENSHOT_EXTENSIONS_BY_MIME[contentTypeFromInput] &&
+      contentTypeFromInput !== detectedType.contentType
+    ) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `image_mime_type ${contentTypeFromInput} does not match detected ${detectedType.contentType}`,
+      );
+    }
+
+    return {
+      buffer,
+      extension: detectedType.extension,
+      contentType: detectedType.contentType,
+    };
+  }
+
+  private async validateLocalUploadFile(filePath: string) {
+    if (!path.isAbsolute(filePath)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        "file_path must be an absolute local path",
+      );
+    }
+
+    const stats = await fs.promises.stat(filePath);
+    if (!stats.isFile()) {
+      throw new McpError(ErrorCode.InvalidParams, "file_path must be a file");
+    }
+
+    if (stats.size > MAX_LOCAL_UPLOAD_BYTES) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `File is too large. Maximum size is ${
+          MAX_LOCAL_UPLOAD_BYTES / 1024 / 1024
+        } MB.`,
+      );
+    }
+
+    const extension = path.extname(filePath).toLowerCase();
+    if (!ALLOWED_LOCAL_UPLOAD_EXTENSIONS.has(extension)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Only image files are supported: ${Array.from(
+          ALLOWED_LOCAL_UPLOAD_EXTENSIONS,
+        ).join(", ")}`,
+      );
+    }
+
+    return { stats, extension };
+  }
+
+  private createDownloadUrl(
+    workspace: string,
+    repo_slug: string,
+    filename: string,
+  ) {
+    return `https://bitbucket.org/${workspace}/${repo_slug}/downloads/${encodeURIComponent(
+      filename,
+    )}`;
+  }
+
+  private async uploadLocalDownload(
+    workspace: string,
+    repo_slug: string,
+    filePath: string,
+    filename?: string,
+  ) {
+    this.ensureLocalUploadsEnabled();
+
+    const { stats, extension } = await this.validateLocalUploadFile(filePath);
+    const uploadName = this.createUploadFilename(filePath, filename);
+    const uploadExtension = path.extname(uploadName).toLowerCase();
+    const contentType =
+      SCREENSHOT_MIME_TYPES[uploadExtension] ??
+      SCREENSHOT_MIME_TYPES[extension];
+    const form = new FormData();
+    form.append("files", fs.createReadStream(filePath), {
+      filename: uploadName,
+      contentType,
+      knownLength: stats.size,
+    });
+
+    logger.info("Uploading local file to Bitbucket downloads", {
+      workspace,
+      repo_slug,
+      filePath,
+      uploadName,
+      size: stats.size,
+    });
+
+    const response = await this.api.post(
+      `/repositories/${workspace}/${repo_slug}/downloads`,
+      form,
+      {
+        headers: form.getHeaders(),
+        maxBodyLength: MAX_LOCAL_UPLOAD_BYTES,
+      },
+    );
+
+    const downloadUrl = this.createDownloadUrl(
+      workspace,
+      repo_slug,
+      uploadName,
+    );
+    return {
+      filename: uploadName,
+      downloadUrl,
+      response: response.data,
+    };
+  }
+
+  async uploadDownloadFile(
+    workspace: string,
+    repo_slug: string,
+    file_path: string,
+    filename?: string,
+  ) {
+    try {
+      const upload = await this.uploadLocalDownload(
+        workspace,
+        repo_slug,
+        file_path,
+        filename,
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(upload, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error uploading local file to Bitbucket downloads", {
+        error,
+        workspace,
+        repo_slug,
+        file_path,
+      });
+      throw error instanceof McpError
+        ? error
+        : new McpError(
+            ErrorCode.InternalError,
+            `Failed to upload file to Bitbucket downloads: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+    }
+  }
+
+  async commentPullRequestWithScreenshot(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    file_path: string,
+    content?: string,
+    filename?: string,
+  ) {
+    try {
+      const upload = await this.uploadLocalDownload(
+        workspace,
+        repo_slug,
+        file_path,
+        filename,
+      );
+      const commentBody = [
+        content?.trim(),
+        `![${upload.filename}](${upload.downloadUrl})`,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      return await this.addPullRequestComment(
+        workspace,
+        repo_slug,
+        pull_request_id,
+        commentBody,
+      );
+    } catch (error) {
+      logger.error("Error commenting on pull request with screenshot", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+        file_path,
+      });
+      throw error instanceof McpError
+        ? error
+        : new McpError(
+            ErrorCode.InternalError,
+            `Failed to comment on pull request with screenshot: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+    }
+  }
+
+  private async uploadImageDataDownload(
+    workspace: string,
+    repo_slug: string,
+    imageData: string,
+    imageMimeType?: string,
+    filename?: string,
+  ) {
+    this.ensureLocalUploadsEnabled();
+
+    const { buffer, extension, contentType } = await this.parseImageData(
+      imageData,
+      imageMimeType,
+    );
+    const uploadName = this.createUploadFilenameFromExtension(
+      extension,
+      filename,
+    );
+    const uploadExtension = path.extname(uploadName).toLowerCase();
+    const uploadContentType =
+      SCREENSHOT_MIME_TYPES[uploadExtension] ?? contentType;
+    const form = new FormData();
+    form.append("files", buffer, {
+      filename: uploadName,
+      contentType: uploadContentType,
+      knownLength: buffer.length,
+    });
+
+    logger.info("Uploading image data to Bitbucket downloads", {
+      workspace,
+      repo_slug,
+      uploadName,
+      size: buffer.length,
+    });
+
+    const response = await this.api.post(
+      `/repositories/${workspace}/${repo_slug}/downloads`,
+      form,
+      {
+        headers: form.getHeaders(),
+        maxBodyLength: MAX_LOCAL_UPLOAD_BYTES,
+      },
+    );
+
+    const downloadUrl = this.createDownloadUrl(
+      workspace,
+      repo_slug,
+      uploadName,
+    );
+    return {
+      filename: uploadName,
+      downloadUrl,
+      response: response.data,
+    };
+  }
+
+  async uploadImageData(
+    workspace: string,
+    repo_slug: string,
+    image_data: string,
+    image_mime_type?: string,
+    filename?: string,
+  ) {
+    try {
+      const upload = await this.uploadImageDataDownload(
+        workspace,
+        repo_slug,
+        image_data,
+        image_mime_type,
+        filename,
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(upload, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error uploading image data to Bitbucket downloads", {
+        error,
+        workspace,
+        repo_slug,
+      });
+      throw error instanceof McpError
+        ? error
+        : new McpError(
+            ErrorCode.InternalError,
+            `Failed to upload image data to Bitbucket downloads: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+    }
+  }
+
+  async commentPullRequestWithImageData(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    image_data: string,
+    image_mime_type?: string,
+    content?: string,
+    filename?: string,
+  ) {
+    try {
+      const upload = await this.uploadImageDataDownload(
+        workspace,
+        repo_slug,
+        image_data,
+        image_mime_type,
+        filename,
+      );
+      const commentBody = [
+        content?.trim(),
+        `![${upload.filename}](${upload.downloadUrl})`,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      return await this.addPullRequestComment(
+        workspace,
+        repo_slug,
+        pull_request_id,
+        commentBody,
+      );
+    } catch (error) {
+      logger.error("Error commenting on pull request with image data", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+      throw error instanceof McpError
+        ? error
+        : new McpError(
+            ErrorCode.InternalError,
+            `Failed to comment on pull request with image data: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+    }
+  }
+
+  private async writeClipboardScreenshotToTempFile(filename?: string) {
+    if (process.platform !== "darwin") {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        "Clipboard screenshot upload currently supports macOS only",
+      );
+    }
+
+    const uploadName = this.createUploadFilename(
+      "/tmp/clipboard-screenshot.png",
+      filename,
+    );
+    const tempFile = path.join(
+      os.tmpdir(),
+      `bitbucket-mcp-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}.png`,
+    );
+
+    try {
+      await execFileAsync("pngpaste", [tempFile]);
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Failed to read clipboard image with pngpaste. Install it with "brew install pngpaste" and copy an image first. ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    return { tempFile, uploadName };
+  }
+
+  async uploadClipboardScreenshot(
+    workspace: string,
+    repo_slug: string,
+    filename?: string,
+  ) {
+    let tempFile: string | undefined;
+
+    try {
+      const clipboardFile =
+        await this.writeClipboardScreenshotToTempFile(filename);
+      tempFile = clipboardFile.tempFile;
+      const upload = await this.uploadLocalDownload(
+        workspace,
+        repo_slug,
+        tempFile,
+        clipboardFile.uploadName,
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(upload, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error uploading clipboard screenshot", {
+        error,
+        workspace,
+        repo_slug,
+      });
+      throw error instanceof McpError
+        ? error
+        : new McpError(
+            ErrorCode.InternalError,
+            `Failed to upload clipboard screenshot: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+    } finally {
+      if (tempFile) {
+        await fs.promises.rm(tempFile, { force: true });
+      }
+    }
+  }
+
+  async commentPullRequestWithClipboardScreenshot(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    content?: string,
+    filename?: string,
+  ) {
+    let tempFile: string | undefined;
+
+    try {
+      const clipboardFile =
+        await this.writeClipboardScreenshotToTempFile(filename);
+      tempFile = clipboardFile.tempFile;
+      return await this.commentPullRequestWithScreenshot(
+        workspace,
+        repo_slug,
+        pull_request_id,
+        tempFile,
+        content,
+        clipboardFile.uploadName,
+      );
+    } catch (error) {
+      logger.error("Error commenting with clipboard screenshot", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+      throw error instanceof McpError
+        ? error
+        : new McpError(
+            ErrorCode.InternalError,
+            `Failed to comment with clipboard screenshot: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+    } finally {
+      if (tempFile) {
+        await fs.promises.rm(tempFile, { force: true });
+      }
     }
   }
 
@@ -3134,7 +3973,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/branching-model`
+        `/repositories/${workspace}/${repo_slug}/branching-model`,
       );
 
       return {
@@ -3155,14 +3994,14 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get repository branching model: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
 
   async getRepositoryBranchingModelSettings(
     workspace: string,
-    repo_slug: string
+    repo_slug: string,
   ) {
     try {
       logger.info("Getting repository branching model settings", {
@@ -3171,7 +4010,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/branching-model/settings`
+        `/repositories/${workspace}/${repo_slug}/branching-model/settings`,
       );
 
       return {
@@ -3192,7 +4031,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get repository branching model settings: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3202,7 +4041,7 @@ class BitbucketServer {
     repo_slug: string,
     development?: Record<string, any>,
     production?: Record<string, any>,
-    branch_types?: Array<Record<string, any>>
+    branch_types?: Array<Record<string, any>>,
   ) {
     try {
       logger.info("Updating repository branching model settings", {
@@ -3221,7 +4060,7 @@ class BitbucketServer {
 
       const response = await this.api.put(
         `/repositories/${workspace}/${repo_slug}/branching-model/settings`,
-        updateData
+        updateData,
       );
 
       return {
@@ -3242,14 +4081,14 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to update repository branching model settings: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
 
   async getEffectiveRepositoryBranchingModel(
     workspace: string,
-    repo_slug: string
+    repo_slug: string,
   ) {
     try {
       logger.info("Getting effective repository branching model", {
@@ -3258,7 +4097,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/effective-branching-model`
+        `/repositories/${workspace}/${repo_slug}/effective-branching-model`,
       );
 
       return {
@@ -3279,7 +4118,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get effective repository branching model: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3292,7 +4131,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.get(
-        `/workspaces/${workspace}/projects/${project_key}/branching-model`
+        `/workspaces/${workspace}/projects/${project_key}/branching-model`,
       );
 
       return {
@@ -3313,14 +4152,14 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get project branching model: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
 
   async getProjectBranchingModelSettings(
     workspace: string,
-    project_key: string
+    project_key: string,
   ) {
     try {
       logger.info("Getting project branching model settings", {
@@ -3329,7 +4168,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.get(
-        `/workspaces/${workspace}/projects/${project_key}/branching-model/settings`
+        `/workspaces/${workspace}/projects/${project_key}/branching-model/settings`,
       );
 
       return {
@@ -3350,7 +4189,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get project branching model settings: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3360,7 +4199,7 @@ class BitbucketServer {
     project_key: string,
     development?: Record<string, any>,
     production?: Record<string, any>,
-    branch_types?: Array<Record<string, any>>
+    branch_types?: Array<Record<string, any>>,
   ) {
     try {
       logger.info("Updating project branching model settings", {
@@ -3379,7 +4218,7 @@ class BitbucketServer {
 
       const response = await this.api.put(
         `/workspaces/${workspace}/projects/${project_key}/branching-model/settings`,
-        updateData
+        updateData,
       );
 
       return {
@@ -3400,7 +4239,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to update project branching model settings: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3410,7 +4249,7 @@ class BitbucketServer {
     repo_slug: string,
     pull_request_id: string,
     content: string,
-    inline?: InlineCommentInline
+    inline?: InlineCommentInline,
   ) {
     try {
       logger.info("Adding pending comment to Bitbucket pull request", {
@@ -3427,7 +4266,7 @@ class BitbucketServer {
         pull_request_id,
         content,
         inline,
-        true // Set pending to true for draft comment
+        true, // Set pending to true for draft comment
       );
     } catch (error) {
       logger.error("Error adding pending comment to pull request", {
@@ -3440,7 +4279,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to add pending pull request comment: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3448,7 +4287,7 @@ class BitbucketServer {
   async publishPendingComments(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
   ) {
     try {
       logger.info("Publishing pending comments for Bitbucket pull request", {
@@ -3464,7 +4303,7 @@ class BitbucketServer {
           pagelen: BITBUCKET_MAX_PAGELEN,
           all: true,
           description: "publishPendingComments",
-        }
+        },
       );
 
       type PendingComment = {
@@ -3476,7 +4315,7 @@ class BitbucketServer {
 
       const comments = (commentsResult.values || []) as PendingComment[];
       const pendingComments = comments.filter(
-        (comment: any) => comment.pending === true
+        (comment: any) => comment.pending === true,
       ) as PendingComment[];
 
       if (pendingComments.length === 0) {
@@ -3500,7 +4339,7 @@ class BitbucketServer {
               content: comment.content,
               pending: false,
               ...(comment.inline && { inline: comment.inline }),
-            }
+            },
           );
           publishResults.push({
             commentId: comment.id,
@@ -3526,7 +4365,7 @@ class BitbucketServer {
                 results: publishResults,
               },
               null,
-              2
+              2,
             ),
           },
         ],
@@ -3542,7 +4381,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to publish pending comments: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3554,7 +4393,7 @@ class BitbucketServer {
     description: string,
     sourceBranch: string,
     targetBranch: string,
-    reviewers?: string[]
+    reviewers?: string[],
   ) {
     try {
       logger.info("Creating draft Bitbucket pull request", {
@@ -3574,7 +4413,7 @@ class BitbucketServer {
         sourceBranch,
         targetBranch,
         reviewers,
-        true // Set draft to true
+        true, // Set draft to true
       );
     } catch (error) {
       logger.error("Error creating draft pull request", {
@@ -3586,7 +4425,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to create draft pull request: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3594,7 +4433,7 @@ class BitbucketServer {
   async publishDraftPullRequest(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
   ) {
     try {
       logger.info("Publishing draft pull request", {
@@ -3608,7 +4447,7 @@ class BitbucketServer {
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`,
         {
           draft: false,
-        }
+        },
       );
 
       return {
@@ -3630,7 +4469,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to publish draft pull request: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3638,7 +4477,7 @@ class BitbucketServer {
   async convertTodraft(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
   ) {
     try {
       logger.info("Converting pull request to draft", {
@@ -3652,7 +4491,7 @@ class BitbucketServer {
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`,
         {
           draft: true,
-        }
+        },
       );
 
       return {
@@ -3674,7 +4513,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to convert pull request to draft: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3682,14 +4521,14 @@ class BitbucketServer {
   async getPendingReviewPRs(
     workspace?: string,
     limit: number = 50,
-    repositoryList?: string[]
+    repositoryList?: string[],
   ) {
     try {
       const wsName = workspace || this.config.defaultWorkspace;
       if (!wsName) {
         throw new McpError(
           ErrorCode.InvalidParams,
-          "Workspace must be provided either as a parameter or through BITBUCKET_WORKSPACE environment variable"
+          "Workspace must be provided either as a parameter or through BITBUCKET_WORKSPACE environment variable",
         );
       }
 
@@ -3697,7 +4536,7 @@ class BitbucketServer {
       if (!currentUserNickname) {
         throw new McpError(
           ErrorCode.InvalidParams,
-          "Username must be provided through BITBUCKET_USERNAME environment variable"
+          "Username must be provided through BITBUCKET_USERNAME environment variable",
         );
       }
 
@@ -3714,7 +4553,7 @@ class BitbucketServer {
         // Use the provided repository list
         repositoriesToCheck = repositoryList;
         logger.info(
-          `Checking specific repositories: ${repositoryList.join(", ")}`
+          `Checking specific repositories: ${repositoryList.join(", ")}`,
         );
       } else {
         // Get all repositories in the workspace (existing behavior)
@@ -3725,19 +4564,21 @@ class BitbucketServer {
             pagelen: BITBUCKET_MAX_PAGELEN,
             all: true,
             description: "getPendingReviewPRs.repositories",
-          }
+          },
         );
 
         if (!reposResponse.values) {
           throw new McpError(
             ErrorCode.InternalError,
-            "Failed to fetch repositories"
+            "Failed to fetch repositories",
           );
         }
 
-        repositoriesToCheck = reposResponse.values.map((repo: any) => repo.name);
+        repositoriesToCheck = reposResponse.values.map(
+          (repo: any) => repo.name,
+        );
         logger.info(
-          `Found ${repositoriesToCheck.length} repositories to check`
+          `Found ${repositoriesToCheck.length} repositories to check`,
         );
       }
 
@@ -3763,7 +4604,7 @@ class BitbucketServer {
                   fields:
                     "values.id,values.title,values.description,values.state,values.created_on,values.updated_on,values.author,values.source,values.destination,values.participants.user.nickname,values.participants.role,values.participants.approved,values.links",
                 },
-              }
+              },
             );
 
             if (!prsResponse.data.values) {
@@ -3784,7 +4625,7 @@ class BitbucketServer {
                     nickname: p.user?.nickname,
                     role: p.role,
                     approved: p.approved,
-                  }))
+                  })),
                 );
 
                 // Check if current user is a reviewer who hasn't approved
@@ -3792,16 +4633,16 @@ class BitbucketServer {
                   (participant: any) =>
                     participant.user?.nickname === currentUserNickname &&
                     participant.role === "REVIEWER" &&
-                    participant.approved === false
+                    participant.approved === false,
                 );
 
                 logger.debug(
                   `PR ${pr.id} - User ${currentUserNickname} is pending reviewer:`,
-                  !!userParticipant
+                  !!userParticipant,
                 );
 
                 return !!userParticipant;
-              }
+              },
             );
 
             // Add repository info to each PR
@@ -3842,7 +4683,7 @@ class BitbucketServer {
         .slice(0, limit)
         .sort(
           (a, b) =>
-            new Date(b.updated_on).getTime() - new Date(a.updated_on).getTime()
+            new Date(b.updated_on).getTime() - new Date(a.updated_on).getTime(),
         );
 
       logger.info(`Found ${finalResults.length} pending review PRs`);
@@ -3860,7 +4701,7 @@ class BitbucketServer {
                 workspace: wsName,
               },
               null,
-              2
+              2,
             ),
           },
         ],
@@ -3871,7 +4712,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pending review PRs: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3894,7 +4735,7 @@ class BitbucketServer {
     target_branch?: string,
     trigger_type?: "manual" | "push" | "pullrequest" | "schedule",
     legacyLimit?: number,
-    sort?: string
+    sort?: string,
   ) {
     try {
       logger.info("Listing pipeline runs", {
@@ -3923,7 +4764,7 @@ class BitbucketServer {
           all,
           params,
           description: "listPipelineRuns",
-        }
+        },
       );
 
       return {
@@ -3944,7 +4785,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to list pipeline runs: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3952,7 +4793,7 @@ class BitbucketServer {
   async getPipelineRun(
     workspace: string,
     repo_slug: string,
-    pipeline_uuid: string
+    pipeline_uuid: string,
   ) {
     try {
       logger.info("Getting pipeline run details", {
@@ -3962,7 +4803,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}`
+        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}`,
       );
 
       return {
@@ -3984,7 +4825,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pipeline run: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -3993,7 +4834,7 @@ class BitbucketServer {
     workspace: string,
     repo_slug: string,
     target: any,
-    variables?: any[]
+    variables?: any[],
   ) {
     try {
       logger.info("Triggering pipeline run", {
@@ -4044,7 +4885,7 @@ class BitbucketServer {
 
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pipelines`,
-        requestData
+        requestData,
       );
 
       return {
@@ -4065,7 +4906,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to run pipeline: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4073,7 +4914,7 @@ class BitbucketServer {
   async stopPipeline(
     workspace: string,
     repo_slug: string,
-    pipeline_uuid: string
+    pipeline_uuid: string,
   ) {
     try {
       logger.info("Stopping pipeline", {
@@ -4086,7 +4927,7 @@ class BitbucketServer {
       // Content-Type. Pass `{}` so axios infers `application/json`.
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/stop`,
-        {}
+        {},
       );
 
       return {
@@ -4108,7 +4949,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to stop pipeline: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4119,7 +4960,7 @@ class BitbucketServer {
     pipeline_uuid: string,
     pagelen?: number,
     page?: number,
-    all?: boolean
+    all?: boolean,
   ) {
     try {
       logger.info("Getting pipeline steps", {
@@ -4138,7 +4979,7 @@ class BitbucketServer {
           page,
           all,
           description: "getPipelineSteps",
-        }
+        },
       );
 
       return {
@@ -4160,7 +5001,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pipeline steps: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4169,7 +5010,7 @@ class BitbucketServer {
     workspace: string,
     repo_slug: string,
     pipeline_uuid: string,
-    step_uuid: string
+    step_uuid: string,
   ) {
     try {
       logger.info("Getting pipeline step details", {
@@ -4180,7 +5021,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/steps/${step_uuid}`
+        `/repositories/${workspace}/${repo_slug}/pipelines/${pipeline_uuid}/steps/${step_uuid}`,
       );
 
       return {
@@ -4203,7 +5044,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pipeline step: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4217,7 +5058,7 @@ class BitbucketServer {
     tail?: boolean,
     errorsOnly?: boolean,
     searchTerm?: string,
-    saveToFile?: boolean
+    saveToFile?: boolean,
   ) {
     try {
       logger.info("Getting pipeline step logs", {
@@ -4237,15 +5078,15 @@ class BitbucketServer {
         {
           maxRedirects: 5, // Follow redirects to S3
           responseType: "text",
-        }
+        },
       );
 
       const rawLog =
         typeof response.data === "string"
           ? response.data
           : response.data === undefined || response.data === null
-          ? ""
-          : String(response.data);
+            ? ""
+            : String(response.data);
       const allLines = rawLog.length > 0 ? rawLog.split(/\r?\n/) : [];
       const totalLines = allLines.length;
 
@@ -4257,7 +5098,7 @@ class BitbucketServer {
       }
       if (normalizedSearch && normalizedSearch.length > 0) {
         filteredLines = filteredLines.filter((line) =>
-          line.toLowerCase().includes(normalizedSearch)
+          line.toLowerCase().includes(normalizedSearch),
         );
       }
 
@@ -4289,19 +5130,19 @@ class BitbucketServer {
             tail ? "most recent" : "earliest"
           } lines${
             wasTruncated ? ` (limited to ${resolvedMaxLines} lines)` : ""
-          }.`
+          }.`,
         );
       }
 
       if (saveToFile) {
         try {
           const tempDir = fs.mkdtempSync(
-            path.join(os.tmpdir(), "bitbucket-mcp-")
+            path.join(os.tmpdir(), "bitbucket-mcp-"),
           );
           const safeFileName =
             `pipeline-${pipeline_uuid}-step-${step_uuid}.log`.replace(
               /[^a-zA-Z0-9._-]/g,
-              "_"
+              "_",
             );
           const filePath = path.join(tempDir, safeFileName);
           fs.writeFileSync(filePath, rawLog, "utf8");
@@ -4311,14 +5152,14 @@ class BitbucketServer {
             error: fileError,
           });
           summaryParts.push(
-            "Attempted to save the full log to a temporary file, but writing failed."
+            "Attempted to save the full log to a temporary file, but writing failed.",
           );
         }
       }
 
       if (!saveToFile && wasTruncated) {
         summaryParts.push(
-          "Use max_lines, tail, search_term, or save_to_file to refine or download the full log."
+          "Use max_lines, tail, search_term, or save_to_file to refine or download the full log.",
         );
       }
 
@@ -4348,7 +5189,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pipeline step logs: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4357,7 +5198,7 @@ class BitbucketServer {
     workspace: string,
     repo_slug: string,
     pull_request_id: string,
-    comment_id: string
+    comment_id: string,
   ) {
     try {
       logger.info("Getting pull request comment", {
@@ -4368,7 +5209,7 @@ class BitbucketServer {
       });
 
       const response = await this.api.get(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments/${comment_id}`
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments/${comment_id}`,
       );
 
       return {
@@ -4391,7 +5232,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pull request comment: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4401,7 +5242,7 @@ class BitbucketServer {
     repo_slug: string,
     pull_request_id: string,
     comment_id: string,
-    content: string
+    content: string,
   ) {
     try {
       logger.info("Updating pull request comment", {
@@ -4415,7 +5256,7 @@ class BitbucketServer {
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments/${comment_id}`,
         {
           content: { raw: content },
-        }
+        },
       );
 
       return {
@@ -4435,7 +5276,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to update pull request comment: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4444,7 +5285,7 @@ class BitbucketServer {
     workspace: string,
     repo_slug: string,
     pull_request_id: string,
-    comment_id: string
+    comment_id: string,
   ) {
     try {
       logger.info("Deleting pull request comment", {
@@ -4455,7 +5296,7 @@ class BitbucketServer {
       });
 
       await this.api.delete(
-        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments/${comment_id}`
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments/${comment_id}`,
       );
 
       return {
@@ -4473,7 +5314,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to delete pull request comment: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4483,7 +5324,7 @@ class BitbucketServer {
     repo_slug: string,
     pull_request_id: string,
     comment_id: string,
-    resolved: boolean
+    resolved: boolean,
   ) {
     try {
       logger.info("Setting comment resolved state", {
@@ -4508,7 +5349,7 @@ class BitbucketServer {
           visited.add(targetCommentId);
 
           const commentResponse = await this.api.get(
-            commentUrl(targetCommentId)
+            commentUrl(targetCommentId),
           );
           const parentId = commentResponse.data?.parent?.id;
           if (parentId === undefined || parentId === null) break;
@@ -4524,7 +5365,7 @@ class BitbucketServer {
             repo_slug,
             pull_request_id,
             comment_id,
-          }
+          },
         );
         targetCommentId = comment_id;
       }
@@ -4566,7 +5407,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to update comment resolved state: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4577,7 +5418,7 @@ class BitbucketServer {
     pull_request_id: string,
     pagelen?: number,
     page?: number,
-    all?: boolean
+    all?: boolean,
   ) {
     try {
       logger.info("Getting pull request diffstat", {
@@ -4596,7 +5437,7 @@ class BitbucketServer {
           page,
           all,
           description: "getPullRequestDiffStat",
-        }
+        },
       );
 
       return {
@@ -4615,7 +5456,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pull request diffstat: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4623,7 +5464,7 @@ class BitbucketServer {
   async getPullRequestPatch(
     workspace: string,
     repo_slug: string,
-    pull_request_id: string
+    pull_request_id: string,
   ) {
     try {
       logger.info("Getting pull request patch", {
@@ -4638,7 +5479,7 @@ class BitbucketServer {
           headers: { Accept: "text/plain" },
           responseType: "text",
           maxRedirects: 5,
-        }
+        },
       );
 
       return { content: [{ type: "text", text: response.data }] };
@@ -4653,7 +5494,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pull request patch: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4664,7 +5505,7 @@ class BitbucketServer {
     pull_request_id: string,
     pagelen?: number,
     page?: number,
-    all?: boolean
+    all?: boolean,
   ) {
     try {
       logger.info("Getting pull request tasks", {
@@ -4683,7 +5524,7 @@ class BitbucketServer {
           page,
           all,
           description: "getPullRequestTasks",
-        }
+        },
       );
 
       return {
@@ -4702,7 +5543,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pull request tasks: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4713,7 +5554,7 @@ class BitbucketServer {
     pull_request_id: string,
     content: string,
     commentId?: number,
-    state?: "OPEN" | "RESOLVED"
+    state?: "OPEN" | "RESOLVED",
   ) {
     try {
       logger.info("Creating pull request task", {
@@ -4728,7 +5569,7 @@ class BitbucketServer {
 
       const response = await this.api.post(
         `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/tasks`,
-        data
+        data,
       );
 
       return {
@@ -4747,7 +5588,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to create pull request task: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4756,7 +5597,7 @@ class BitbucketServer {
     workspace: string,
     repo_slug: string,
     pull_request_id: string,
-    task_id: string
+    task_id: string,
   ) {
     try {
       logger.info("Getting pull request task", {
@@ -4785,7 +5626,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pull request task: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4796,7 +5637,7 @@ class BitbucketServer {
     pull_request_id: string,
     task_id: string,
     content?: string,
-    state?: "OPEN" | "RESOLVED"
+    state?: "OPEN" | "RESOLVED",
   ) {
     try {
       logger.info("Updating pull request task", {
@@ -4829,7 +5670,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to update pull request task: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4838,7 +5679,7 @@ class BitbucketServer {
     workspace: string,
     repo_slug: string,
     pull_request_id: string,
-    task_id: string
+    task_id: string,
   ) {
     try {
       logger.info("Deleting pull request task", {
@@ -4865,7 +5706,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to delete pull request task: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -4876,7 +5717,7 @@ class BitbucketServer {
     pull_request_id: string,
     pagelen?: number,
     page?: number,
-    all?: boolean
+    all?: boolean,
   ) {
     try {
       logger.info("Getting pull request statuses", {
@@ -4895,7 +5736,7 @@ class BitbucketServer {
           page,
           all,
           description: "getPullRequestStatuses",
-        }
+        },
       );
 
       const payload = {
@@ -4909,9 +5750,7 @@ class BitbucketServer {
       };
 
       return {
-        content: [
-          { type: "text", text: JSON.stringify(payload, null, 2) },
-        ],
+        content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
       };
     } catch (error) {
       logger.error("Error getting pull request statuses", {
@@ -4924,7 +5763,7 @@ class BitbucketServer {
         ErrorCode.InternalError,
         `Failed to get pull request statuses: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }

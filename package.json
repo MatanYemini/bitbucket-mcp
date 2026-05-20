@@ -53,6 +53,7 @@
     "@modelcontextprotocol/sdk": "1.1.1",
     "axios": "^1.6.5",
     "dotenv": "^17.3.1",
+    "file-type": "^21.3.4",
     "winston": "^3.11.0"
   },
   "devDependencies": {
