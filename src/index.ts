@@ -4689,7 +4689,7 @@ class BitbucketServer {
         pull_request_id,
       });
 
-      const data: Record<string, any> = { content };
+      const data: Record<string, any> = { content: { raw: content } };
       if (commentId) data.comment = { id: commentId };
       if (state) data.state = state;
 
