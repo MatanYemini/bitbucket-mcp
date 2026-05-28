@@ -4774,10 +4774,13 @@ class BitbucketServer {
       });
 
       const data: Record<string, any> = {};
-      if (content !== undefined) data.content = content;
+      if (content !== undefined) data.content = { raw: content };
       if (state !== undefined) data.state = state;
 
-      const response = await this.api.put(`/tasks/${task_id}`, data);
+      const response = await this.api.put(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/tasks/${task_id}`,
+        data
+      );
 
       return {
         content: [
