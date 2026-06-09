@@ -510,6 +510,8 @@ class BitbucketServer {
   private readonly dangerousToolNames = new Set<string>([
     "deletePullRequestComment",
     "deletePullRequestTask",
+    "deleteMyPullRequestComments",
+    "deletePullRequestComments",
   ]);
   private isDangerousTool(name: string): boolean {
     // Explicitly dangerous or conservative prefix match (delete*)
@@ -753,6 +755,37 @@ class BitbucketServer {
               },
             },
             required: ["workspace", "repo_slug", "pull_request_id"],
+          },
+        },
+        {
+          name: "updatePullRequestReviewers",
+          description:
+            "Replace the list of reviewers on a pull request. Bitbucket replaces the entire reviewer set on PUT, so pass the full final list of reviewer UUIDs (pass an empty array to clear all reviewers).",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              reviewers: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Full list of reviewer UUIDs that should end up on the PR, e.g. ['{04776764-62c7-453b-b97e-302f60395ceb}']. Pass [] to clear all reviewers.",
+              },
+            },
+            required: [
+              "workspace",
+              "repo_slug",
+              "pull_request_id",
+              "reviewers",
+            ],
           },
         },
         {
@@ -1853,6 +1886,82 @@ class BitbucketServer {
           },
         },
         {
+          name: "deleteMyPullRequestComments",
+          description:
+            "Delete every comment on a pull request that was authored by the authenticated user. Identifies the caller via GET /user (UUID) and falls back to matching against BITBUCKET_USERNAME. Requires BITBUCKET_ENABLE_DANGEROUS=true.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              dry_run: {
+                type: "boolean",
+                description:
+                  "If true, return the matched comments without deleting them. Defaults to false.",
+              },
+            },
+            required: ["workspace", "repo_slug", "pull_request_id"],
+          },
+        },
+        {
+          name: "deletePullRequestComments",
+          description:
+            "Bulk delete pull request comments by filter (comment IDs, author UUID, author nickname, and/or resolved state). At least one filter is required. Requires BITBUCKET_ENABLE_DANGEROUS=true.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              comment_ids: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Specific comment IDs to target. Combined with the other filters using AND.",
+              },
+              author_uuid: {
+                type: "string",
+                description:
+                  "Match comments authored by this UUID, e.g. '{04776764-62c7-453b-b97e-302f60395ceb}'.",
+              },
+              author_nickname: {
+                type: "string",
+                description:
+                  "Match comments by nickname, username, or display_name (case-insensitive).",
+              },
+              resolved: {
+                type: "boolean",
+                description:
+                  "If true, only delete resolved comments; if false, only delete unresolved ones. Omit to ignore resolution state.",
+              },
+              include_replies: {
+                type: "boolean",
+                description:
+                  "Also delete reply comments whose ancestor matches the filter. Defaults to false.",
+              },
+              dry_run: {
+                type: "boolean",
+                description:
+                  "If true, return the matched comments without deleting. Defaults to false.",
+              },
+            },
+            required: ["workspace", "repo_slug", "pull_request_id"],
+          },
+        },
+        {
           name: "resolveComment",
           description: "Resolve a comment thread on a pull request",
           inputSchema: {
@@ -2165,6 +2274,13 @@ class BitbucketServer {
               args.title as string,
               args.description as string,
             );
+          case "updatePullRequestReviewers":
+            return await this.updatePullRequestReviewers(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.reviewers as string[],
+            );
           case "getPullRequestActivity":
             return await this.getPullRequestActivity(
               args.workspace as string,
@@ -2457,6 +2573,27 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.comment_id as string,
+            );
+          case "deleteMyPullRequestComments":
+            return await this.deleteMyPullRequestComments(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              args.dry_run as boolean | undefined,
+            );
+          case "deletePullRequestComments":
+            return await this.deletePullRequestComments(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string,
+              {
+                comment_ids: args.comment_ids as string[] | undefined,
+                author_uuid: args.author_uuid as string | undefined,
+                author_nickname: args.author_nickname as string | undefined,
+                resolved: args.resolved as boolean | undefined,
+                include_replies: args.include_replies as boolean | undefined,
+                dry_run: args.dry_run as boolean | undefined,
+              },
             );
           case "resolveComment":
             return await this.setCommentResolved(
@@ -2923,6 +3060,62 @@ class BitbucketServer {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to update pull request: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  async updatePullRequestReviewers(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    reviewers: string[],
+  ) {
+    try {
+      if (!Array.isArray(reviewers)) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          "`reviewers` must be an array of reviewer UUID strings (pass [] to clear all reviewers).",
+        );
+      }
+
+      // Bitbucket expects reviewers as [{uuid: "{...}"}]; an empty array clears reviewers.
+      const reviewersPayload = reviewers
+        .filter((uuid) => typeof uuid === "string" && uuid.trim().length > 0)
+        .map((uuid) => ({ uuid: uuid.trim() }));
+
+      logger.info("Updating Bitbucket pull request reviewers", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+        reviewerCount: reviewersPayload.length,
+      });
+
+      const response = await this.api.put(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}`,
+        { reviewers: reviewersPayload },
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      if (error instanceof McpError) throw error;
+      logger.error("Error updating pull request reviewers", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to update pull request reviewers: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -5313,6 +5506,353 @@ class BitbucketServer {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to delete pull request comment: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private async fetchAllPullRequestComments(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    description: string,
+  ): Promise<any[]> {
+    const result = await this.paginator.fetchValues<any>(
+      `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments`,
+      { all: true, description },
+    );
+    return result.values;
+  }
+
+  private async deleteCommentsByIds(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    comments: any[],
+  ): Promise<{
+    deleted: Array<string | number>;
+    failed: Array<{ id: string | number; error: string }>;
+  }> {
+    const deleted: Array<string | number> = [];
+    const failed: Array<{ id: string | number; error: string }> = [];
+
+    for (const comment of comments) {
+      const id = comment?.id;
+      if (id === undefined || id === null) continue;
+      try {
+        await this.api.delete(
+          `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/comments/${id}`,
+        );
+        deleted.push(id);
+      } catch (deleteError) {
+        failed.push({
+          id,
+          error:
+            deleteError instanceof Error
+              ? deleteError.message
+              : String(deleteError),
+        });
+      }
+    }
+
+    return { deleted, failed };
+  }
+
+  async deleteMyPullRequestComments(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    dry_run?: boolean,
+  ) {
+    try {
+      logger.info("Deleting authenticated user's PR comments", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+        dry_run,
+      });
+
+      // Identify the caller. GET /user gives the most reliable UUID match; the
+      // configured BITBUCKET_USERNAME is used as a nickname/display_name fallback.
+      let myUuid: string | undefined;
+      let myNickname: string | undefined;
+      try {
+        const userResponse = await this.api.get("/user");
+        myUuid = userResponse.data?.uuid;
+        myNickname =
+          userResponse.data?.nickname ?? userResponse.data?.username;
+      } catch (userError) {
+        logger.warn(
+          "Failed to fetch /user; falling back to BITBUCKET_USERNAME for identity",
+          { error: userError },
+        );
+      }
+      const fallbackNickname = this.config.username;
+
+      if (!myUuid && !myNickname && !fallbackNickname) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          "Unable to identify the authenticated user. Set BITBUCKET_USERNAME or use a token with access to /user.",
+        );
+      }
+
+      const allComments = await this.fetchAllPullRequestComments(
+        workspace,
+        repo_slug,
+        pull_request_id,
+        "deleteMyPullRequestComments:listComments",
+      );
+
+      const isMine = (c: any): boolean => {
+        const u = c?.user;
+        if (!u) return false;
+        if (myUuid && u.uuid === myUuid) return true;
+        const candidates = [u.nickname, u.username, u.display_name].filter(
+          (v): v is string => typeof v === "string",
+        );
+        if (myNickname && candidates.includes(myNickname)) return true;
+        if (fallbackNickname && candidates.includes(fallbackNickname))
+          return true;
+        return false;
+      };
+
+      const matched = allComments
+        .filter((c: any) => c?.deleted !== true)
+        .filter(isMine);
+
+      if (dry_run === true) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  dry_run: true,
+                  matched_count: matched.length,
+                  matched_ids: matched.map((c: any) => c?.id),
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      const { deleted, failed } = await this.deleteCommentsByIds(
+        workspace,
+        repo_slug,
+        pull_request_id,
+        matched,
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                deleted_count: deleted.length,
+                deleted_ids: deleted,
+                failed_count: failed.length,
+                failed,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      if (error instanceof McpError) throw error;
+      logger.error("Error deleting authenticated user's PR comments", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to delete my pull request comments: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  async deletePullRequestComments(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string,
+    filters: {
+      comment_ids?: string[];
+      author_uuid?: string;
+      author_nickname?: string;
+      resolved?: boolean;
+      include_replies?: boolean;
+      dry_run?: boolean;
+    },
+  ) {
+    try {
+      const {
+        comment_ids,
+        author_uuid,
+        author_nickname,
+        resolved,
+        include_replies = false,
+        dry_run = false,
+      } = filters;
+
+      const hasIds = Array.isArray(comment_ids) && comment_ids.length > 0;
+      const hasFilter =
+        hasIds ||
+        typeof author_uuid === "string" ||
+        typeof author_nickname === "string" ||
+        typeof resolved === "boolean";
+
+      if (!hasFilter) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          "Provide at least one filter: comment_ids, author_uuid, author_nickname, or resolved.",
+        );
+      }
+
+      logger.info("Deleting PR comments by filter", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+        filters: {
+          comment_ids_count: comment_ids?.length ?? 0,
+          author_uuid,
+          author_nickname,
+          resolved,
+          include_replies,
+          dry_run,
+        },
+      });
+
+      const allComments = await this.fetchAllPullRequestComments(
+        workspace,
+        repo_slug,
+        pull_request_id,
+        "deletePullRequestComments:listComments",
+      );
+
+      const idSet = hasIds
+        ? new Set((comment_ids as string[]).map((s) => String(s)))
+        : undefined;
+      const nicknameLc = author_nickname?.toLowerCase();
+
+      const matchesFilter = (c: any): boolean => {
+        if (c?.deleted === true) return false;
+        if (idSet && !idSet.has(String(c?.id))) return false;
+        if (author_uuid && c?.user?.uuid !== author_uuid) return false;
+        if (nicknameLc) {
+          const candidates = [
+            c?.user?.nickname,
+            c?.user?.username,
+            c?.user?.display_name,
+          ]
+            .filter((v): v is string => typeof v === "string")
+            .map((v) => v.toLowerCase());
+          if (!candidates.includes(nicknameLc)) return false;
+        }
+        if (typeof resolved === "boolean") {
+          const isResolved =
+            c?.resolution !== undefined && c?.resolution !== null;
+          if (isResolved !== resolved) return false;
+        }
+        return true;
+      };
+
+      let matched = allComments.filter(matchesFilter);
+
+      if (include_replies && matched.length > 0) {
+        const matchedIds = new Set(matched.map((c: any) => String(c?.id)));
+        const byId = new Map<string, any>();
+        for (const c of allComments) {
+          if (c?.id !== undefined) byId.set(String(c.id), c);
+        }
+        const isDescendantOfMatched = (c: any): boolean => {
+          let cursor = c;
+          const visited = new Set<string>();
+          for (let depth = 0; depth < 50; depth++) {
+            const parentId = cursor?.parent?.id;
+            if (parentId === undefined || parentId === null) return false;
+            const parentKey = String(parentId);
+            if (visited.has(parentKey)) return false;
+            visited.add(parentKey);
+            if (matchedIds.has(parentKey)) return true;
+            const parent = byId.get(parentKey);
+            if (!parent) return false;
+            cursor = parent;
+          }
+          return false;
+        };
+        const replies: any[] = [];
+        for (const c of allComments) {
+          if (c?.deleted === true) continue;
+          if (matchedIds.has(String(c?.id))) continue;
+          if (isDescendantOfMatched(c)) replies.push(c);
+        }
+        matched = [...matched, ...replies];
+      }
+
+      if (dry_run) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  dry_run: true,
+                  matched_count: matched.length,
+                  matched_ids: matched.map((c: any) => c?.id),
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      const { deleted, failed } = await this.deleteCommentsByIds(
+        workspace,
+        repo_slug,
+        pull_request_id,
+        matched,
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                deleted_count: deleted.length,
+                deleted_ids: deleted,
+                failed_count: failed.length,
+                failed,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      if (error instanceof McpError) throw error;
+      logger.error("Error deleting PR comments by filter", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to delete pull request comments: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

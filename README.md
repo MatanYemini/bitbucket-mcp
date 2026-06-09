@@ -289,6 +289,17 @@ Updates a pull request.
 - Pagination controls described in [Pagination](#pagination)
 - Various optional update parameters (title, description, etc.)
 
+#### `updatePullRequestReviewers`
+
+Replaces the list of reviewers on a pull request. Bitbucket's PUT replaces the entire reviewer set, so pass the full final list of reviewer UUIDs. Pass an empty array to clear all reviewers.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pull_request_id`: Pull request ID
+- `reviewers`: Array of reviewer UUIDs (e.g. `['{04776764-62c7-453b-b97e-302f60395ceb}']`). Use `[]` to clear.
+
 #### `getPullRequestActivity`
 
 Gets the activity log for a pull request.
@@ -575,6 +586,33 @@ Deletes a comment on a pull request.
 - `repo_slug`: Repository slug
 - `pull_request_id`: Pull request ID
 - `comment_id`: Comment ID
+
+#### `deleteMyPullRequestComments`
+
+Deletes every comment on a pull request that was authored by the authenticated user. The caller is identified via `GET /user` (UUID match), with `BITBUCKET_USERNAME` as a nickname/display_name fallback. Returns the IDs of deleted comments along with any failures. Considered a dangerous operation — requires `BITBUCKET_ENABLE_DANGEROUS=true`.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pull_request_id`: Pull request ID
+- `dry_run` (optional): If `true`, return the matched comments without deleting them.
+
+#### `deletePullRequestComments`
+
+Bulk-deletes pull request comments by filter. At least one filter is required; multiple filters are combined with AND. Considered a dangerous operation — requires `BITBUCKET_ENABLE_DANGEROUS=true`.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pull_request_id`: Pull request ID
+- `comment_ids` (optional): Specific comment IDs to target.
+- `author_uuid` (optional): Match comments authored by this UUID (e.g. `{04776764-62c7-453b-b97e-302f60395ceb}`).
+- `author_nickname` (optional): Match comments by nickname, username, or display_name (case-insensitive).
+- `resolved` (optional): `true` to only delete resolved comments, `false` to only delete unresolved.
+- `include_replies` (optional): Also delete reply comments whose ancestor matches the filter. Defaults to `false`.
+- `dry_run` (optional): If `true`, return the matched comments without deleting them.
 
 #### `resolveComment`
 
