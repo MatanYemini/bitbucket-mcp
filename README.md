@@ -1,20 +1,25 @@
-# Bitbucket MCP
+# Bitbucket MCP Plus
 
 A Model Context Protocol (MCP) server for integrating with Bitbucket Cloud and Server APIs. This MCP server enables AI assistants like Cursor to interact with your Bitbucket repositories, pull requests, and other resources.
 
+This is a fork of [`bitbucket-mcp`](https://www.npmjs.com/package/bitbucket-mcp) with extra tooling:
+
+- Local image upload tools for PR comments (file path, clipboard, raw base64)
+- Reviewer management on pull requests (`updatePullRequestReviewers`)
+- Batch comment removal (`deleteMyPullRequestComments`, `deletePullRequestComments`)
+
 ## Safety First
 
-This is a safe and responsible package — no DELETE operations are used, so there's no risk of data loss.
+Destructive operations (e.g. delete tools) are gated behind `BITBUCKET_ENABLE_DANGEROUS=true` and are off by default, so there's no risk of accidental data loss.
 Every pull request is analyzed with CodeQL to ensure the code remains secure.
 
-[![CodeQL](https://github.com/MatanYemini/bitbucket-mcp/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/MatanYemini/bitbucket-mcp/actions/workflows/github-code-scanning/codeql)
-[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue.svg)](https://github.com/MatanYemini/bitbucket-mcp)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue.svg)](https://github.com/yunior8908/local-bitbucket-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![npm version](https://badge.fury.io/js/bitbucket-mcp.svg)](https://www.npmjs.com/package/bitbucket-mcp)
+[![npm version](https://badge.fury.io/js/bitbucket-mcp-plus.svg)](https://www.npmjs.com/package/bitbucket-mcp-plus)
 
 ## Overview
 
-Checkout out the [official npm package](https://www.npmjs.com/package/bitbucket-mcp)
+Checkout out the [official npm package](https://www.npmjs.com/package/bitbucket-mcp-plus)
 This server implements the Model Context Protocol standard to provide AI assistants with access to Bitbucket data and operations. It includes tools for:
 
 - Listing and retrieving repositories
@@ -36,13 +41,13 @@ BITBUCKET_URL="https://api.bitbucket.org/2.0" \
 BITBUCKET_WORKSPACE="your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
-npx -y bitbucket-mcp@latest
+npx -y bitbucket-mcp-plus@latest
 
 # Option B (legacy-compatible): web URL only; workspace is auto-extracted
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
-npx -y bitbucket-mcp@latest
+npx -y bitbucket-mcp-plus@latest
 ```
 
 ### Manual Installation
@@ -51,10 +56,10 @@ Alternatively, you can install it globally or as part of your project:
 
 ```bash
 # Install globally
-npm install -g bitbucket-mcp
+npm install -g bitbucket-mcp-plus
 
 # Or install in your project
-npm install bitbucket-mcp
+npm install bitbucket-mcp-plus
 ```
 
 Then run it with:
@@ -65,26 +70,26 @@ BITBUCKET_URL="https://api.bitbucket.org/2.0" \
 BITBUCKET_WORKSPACE="your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
-bitbucket-mcp
+local-bitbucket-mcp
 
 # If installed globally (Option B - legacy-compatible)
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
-bitbucket-mcp
+local-bitbucket-mcp
 
 # If installed in your project (Option A)
 BITBUCKET_URL="https://api.bitbucket.org/2.0" \
 BITBUCKET_WORKSPACE="your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
-npx bitbucket-mcp
+npx local-bitbucket-mcp
 
 # If installed in your project (Option B - legacy-compatible)
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
-npx bitbucket-mcp
+npx local-bitbucket-mcp
 ```
 
 ## Configuration
@@ -173,7 +178,7 @@ To integrate this MCP server with Cursor:
     "BITBUCKET_USERNAME": "your-username",
     "BITBUCKET_PASSWORD": "your-app-password"
   },
-  "args": ["-y", "bitbucket-mcp@latest"]
+  "args": ["-y", "bitbucket-mcp-plus@latest"]
 }
 ```
 
@@ -194,7 +199,7 @@ If you're developing locally and want to test your changes:
     "BITBUCKET_PASSWORD": "your-app-password",
     "BITBUCKET_ENABLE_LOCAL_UPLOADS": "true"
   },
-  "args": ["/path/to/your/local/bitbucket-mcp/dist/index.js"]
+  "args": ["/path/to/your/local-bitbucket-mcp/dist/index.js"]
 }
 ```
 
@@ -840,8 +845,8 @@ Gets logs for a specific pipeline step.
 
 ```bash
 # Clone the repository
-git clone https://github.com/MatanYemini/bitbucket-mcp.git
-cd bitbucket-mcp
+git clone https://github.com/yunior8908/local-bitbucket-mcp.git
+cd local-bitbucket-mcp
 
 # Install dependencies
 npm install
@@ -862,7 +867,7 @@ everything that guide expects:
    ```bash
    npm run build
    ```
-2. Generate the registry manifest (this reads `package.json` and emits `registry/bitbucket-mcp.manifest.json`):
+2. Generate the registry manifest (this reads `package.json` and emits `registry/bitbucket-mcp-plus.manifest.json`):
    ```bash
    npm run registry:manifest
    ```
@@ -878,8 +883,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Links
 
-- [GitHub Repository](https://github.com/MatanYemini/bitbucket-mcp)
-- [npm Package](https://www.npmjs.com/package/bitbucket-mcp)
+- [GitHub Repository](https://github.com/yunior8908/local-bitbucket-mcp)
+- [npm Package](https://www.npmjs.com/package/bitbucket-mcp-plus)
+- [Upstream `bitbucket-mcp` package (MatanYemini)](https://www.npmjs.com/package/bitbucket-mcp)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [Bitbucket REST API Documentation](https://developer.atlassian.com/cloud/bitbucket/rest/intro/)
 - [Bitbucket Cloud Documentation](https://support.atlassian.com/bitbucket-cloud/)

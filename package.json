@@ -1,12 +1,12 @@
 {
-  "name": "bitbucket-mcp",
-  "version": "5.0.7",
-  "description": "Model Context Protocol (MCP) server for Bitbucket Cloud and Server API integration",
-  "mcpName": "io.github.MatanYemini/bitbucket-mcp",
+  "name": "bitbucket-mcp-plus",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) server for Bitbucket Cloud and Server API integration (fork of bitbucket-mcp with extra tooling: batch comment removal, reviewer management, local image uploads)",
+  "mcpName": "io.github.yunior8908/local-bitbucket-mcp",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "bitbucket-mcp": "dist/index.js"
+    "local-bitbucket-mcp": "dist/index.js"
   },
   "files": [
     "dist",
@@ -39,15 +39,15 @@
     "ai",
     "llm"
   ],
-  "author": "Bitbucket MCP Team",
+  "author": "Yunior Chavez <yunior.chavez@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MatanYemini/bitbucket-mcp"
+    "url": "git+https://github.com/yunior8908/local-bitbucket-mcp.git"
   },
-  "homepage": "https://github.com/MatanYemini/bitbucket-mcp#readme",
+  "homepage": "https://github.com/yunior8908/local-bitbucket-mcp#readme",
   "bugs": {
-    "url": "https://github.com/MatanYemini/bitbucket-mcp/issues"
+    "url": "https://github.com/yunior8908/local-bitbucket-mcp/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.1.1",
