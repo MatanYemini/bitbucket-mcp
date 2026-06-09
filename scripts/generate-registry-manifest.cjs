@@ -7,8 +7,8 @@ const pkgPath = path.join(rootDir, 'package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 
 const manifest = {
-  name: 'Bitbucket MCP',
-  slug: 'bitbucket-mcp',
+  name: 'Bitbucket MCP Plus',
+  slug: 'bitbucket-mcp-plus',
   version: pkg.version,
   description: pkg.description,
   homepage: pkg.homepage,
@@ -81,6 +81,6 @@ const manifest = {
 
 const outputDir = path.join(rootDir, 'registry');
 fs.mkdirSync(outputDir, { recursive: true });
-const outputPath = path.join(outputDir, 'bitbucket-mcp.manifest.json');
+const outputPath = path.join(outputDir, 'bitbucket-mcp-plus.manifest.json');
 fs.writeFileSync(outputPath, JSON.stringify(manifest, null, 2) + '\n');
 console.log(`Registry manifest updated at ${path.relative(rootDir, outputPath)}`);

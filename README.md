@@ -1,20 +1,25 @@
-# Bitbucket MCP
+# Bitbucket MCP Plus
 
 A Model Context Protocol (MCP) server for integrating with Bitbucket Cloud and Server APIs. This MCP server enables AI assistants like Cursor to interact with your Bitbucket repositories, pull requests, and other resources.
 
+This is a fork of [`bitbucket-mcp`](https://www.npmjs.com/package/bitbucket-mcp) with extra tooling:
+
+- Local image upload tools for PR comments (file path, clipboard, raw base64)
+- Reviewer management on pull requests (`updatePullRequestReviewers`)
+- Batch comment removal (`deleteMyPullRequestComments`, `deletePullRequestComments`)
+
 ## Safety First
 
-This is a safe and responsible package — no DELETE operations are used, so there's no risk of data loss.
+Destructive operations (e.g. delete tools) are gated behind `BITBUCKET_ENABLE_DANGEROUS=true` and are off by default, so there's no risk of accidental data loss.
 Every pull request is analyzed with CodeQL to ensure the code remains secure.
 
-[![CodeQL](https://github.com/MatanYemini/bitbucket-mcp/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/MatanYemini/bitbucket-mcp/actions/workflows/github-code-scanning/codeql)
-[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue.svg)](https://github.com/MatanYemini/bitbucket-mcp)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue.svg)](https://github.com/yunior8908/local-bitbucket-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![npm version](https://badge.fury.io/js/bitbucket-mcp.svg)](https://www.npmjs.com/package/bitbucket-mcp)
+[![npm version](https://badge.fury.io/js/bitbucket-mcp-plus.svg)](https://www.npmjs.com/package/bitbucket-mcp-plus)
 
 ## Overview
 
-Checkout out the [official npm package](https://www.npmjs.com/package/bitbucket-mcp)
+Checkout out the [official npm package](https://www.npmjs.com/package/bitbucket-mcp-plus)
 This server implements the Model Context Protocol standard to provide AI assistants with access to Bitbucket data and operations. It includes tools for:
 
 - Listing and retrieving repositories
@@ -36,13 +41,13 @@ BITBUCKET_URL="https://api.bitbucket.org/2.0" \
 BITBUCKET_WORKSPACE="your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
-npx -y bitbucket-mcp@latest
+npx -y bitbucket-mcp-plus@latest
 
 # Option B (legacy-compatible): web URL only; workspace is auto-extracted
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
-npx -y bitbucket-mcp@latest
+npx -y bitbucket-mcp-plus@latest
 ```
 
 ### Manual Installation
@@ -51,10 +56,10 @@ Alternatively, you can install it globally or as part of your project:
 
 ```bash
 # Install globally
-npm install -g bitbucket-mcp
+npm install -g bitbucket-mcp-plus
 
 # Or install in your project
-npm install bitbucket-mcp
+npm install bitbucket-mcp-plus
 ```
 
 Then run it with:
@@ -65,26 +70,26 @@ BITBUCKET_URL="https://api.bitbucket.org/2.0" \
 BITBUCKET_WORKSPACE="your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
-bitbucket-mcp
+local-bitbucket-mcp
 
 # If installed globally (Option B - legacy-compatible)
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
-bitbucket-mcp
+local-bitbucket-mcp
 
 # If installed in your project (Option A)
 BITBUCKET_URL="https://api.bitbucket.org/2.0" \
 BITBUCKET_WORKSPACE="your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
-npx bitbucket-mcp
+npx local-bitbucket-mcp
 
 # If installed in your project (Option B - legacy-compatible)
 BITBUCKET_URL="https://bitbucket.org/your-workspace" \
 BITBUCKET_USERNAME="your-username" \
 BITBUCKET_PASSWORD="your-app-password" \
-npx bitbucket-mcp
+npx local-bitbucket-mcp
 ```
 
 ## Configuration
@@ -101,6 +106,7 @@ Configure the server using the following environment variables:
 | `BITBUCKET_TOKEN`            | Your Bitbucket access token (alternative to username/password)                 | No       |
 | `BITBUCKET_WORKSPACE`        | Default workspace to use. If omitted and `BITBUCKET_URL` contains it, auto-set | No       |
 | `BITBUCKET_ENABLE_DANGEROUS` | Set to `true` to enable dangerous tools (e.g., deletions). Default: disabled   | No       |
+| `BITBUCKET_ENABLE_LOCAL_UPLOADS` | Set to `true` to enable tools that read local image files or clipboard images | No       |
 | `BITBUCKET_LOG_DISABLE`      | Disable file logging when set to `true`/`1`                                    | No       |
 | `BITBUCKET_LOG_FILE`         | Absolute path to a specific log file                                           | No       |
 | `BITBUCKET_LOG_DIR`          | Directory to store logs (defaults to OS-specific app log dir)                  | No       |
@@ -172,7 +178,7 @@ To integrate this MCP server with Cursor:
     "BITBUCKET_USERNAME": "your-username",
     "BITBUCKET_PASSWORD": "your-app-password"
   },
-  "args": ["-y", "bitbucket-mcp@latest"]
+  "args": ["-y", "bitbucket-mcp-plus@latest"]
 }
 ```
 
@@ -190,9 +196,10 @@ If you're developing locally and want to test your changes:
     "BITBUCKET_URL": "https://api.bitbucket.org/2.0",
     "BITBUCKET_WORKSPACE": "your-workspace",
     "BITBUCKET_USERNAME": "your-username",
-    "BITBUCKET_PASSWORD": "your-app-password"
+    "BITBUCKET_PASSWORD": "your-app-password",
+    "BITBUCKET_ENABLE_LOCAL_UPLOADS": "true"
   },
-  "args": ["/path/to/your/local/bitbucket-mcp/dist/index.js"]
+  "args": ["/path/to/your/local-bitbucket-mcp/dist/index.js"]
 }
 ```
 
@@ -286,6 +293,17 @@ Updates a pull request.
 - Pagination controls described in [Pagination](#pagination)
 - Pagination controls described in [Pagination](#pagination)
 - Various optional update parameters (title, description, etc.)
+
+#### `updatePullRequestReviewers`
+
+Replaces the list of reviewers on a pull request. Bitbucket's PUT replaces the entire reviewer set, so pass the full final list of reviewer UUIDs. Pass an empty array to clear all reviewers.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pull_request_id`: Pull request ID
+- `reviewers`: Array of reviewer UUIDs (e.g. `['{04776764-62c7-453b-b97e-302f60395ceb}']`). Use `[]` to clear.
 
 #### `getPullRequestActivity`
 
@@ -452,6 +470,94 @@ addPullRequestComment(workspace, repo, pr_id, "Consider error handling here", {
 });
 ```
 
+#### `uploadDownloadFile`
+
+Uploads a local screenshot/image file to a repository's Bitbucket Downloads.
+
+Requires `BITBUCKET_ENABLE_LOCAL_UPLOADS=true` and a Bitbucket credential with repository write permission.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `file_path`: Absolute path to a local image file (`.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`)
+- `filename` (optional): Upload filename. Defaults to a generated unique filename using the original extension.
+
+#### `commentPullRequestWithScreenshot`
+
+Uploads a local screenshot/image file to Bitbucket Downloads and creates a pull request comment with markdown image syntax.
+
+Requires `BITBUCKET_ENABLE_LOCAL_UPLOADS=true` and a Bitbucket credential with repository write permission.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pull_request_id`: Pull request ID
+- `file_path`: Absolute path to a local image file (`.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`)
+- `content` (optional): Markdown text to place before the screenshot
+- `filename` (optional): Upload filename. Defaults to a generated unique filename using the original extension.
+
+#### `uploadClipboardScreenshot`
+
+Uploads the current macOS clipboard image to a repository's Bitbucket Downloads.
+
+Requires `BITBUCKET_ENABLE_LOCAL_UPLOADS=true`, a Bitbucket credential with repository write permission, and `pngpaste` installed:
+
+```bash
+brew install pngpaste
+```
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `filename` (optional): Upload filename. Defaults to a generated PNG filename.
+
+#### `commentPullRequestWithClipboardScreenshot`
+
+Uploads the current macOS clipboard image to Bitbucket Downloads and creates a pull request comment with markdown image syntax.
+
+Requires `BITBUCKET_ENABLE_LOCAL_UPLOADS=true`, a Bitbucket credential with repository write permission, and `pngpaste` installed.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pull_request_id`: Pull request ID
+- `content` (optional): Markdown text to place before the screenshot
+- `filename` (optional): Upload filename. Defaults to a generated PNG filename.
+
+#### `uploadImageData`
+
+Uploads image bytes provided as raw base64 or a `data:image/...;base64,...` URL to a repository's Bitbucket Downloads. Useful when an AI agent passes a chat-attached image directly to the MCP tool without writing it to disk. Works on any OS and requires no extra apps.
+
+Requires `BITBUCKET_ENABLE_LOCAL_UPLOADS=true` and a Bitbucket credential with repository write permission.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `image_data`: Raw base64 image bytes or a `data:image/...;base64,...` URL (`.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`)
+- `image_mime_type` (optional): MIME type for raw base64 input (e.g. `image/png`). Ignored when `image_data` is a data URL.
+- `filename` (optional): Upload filename. Defaults to a generated filename using the detected image extension.
+
+#### `commentPullRequestWithImageData`
+
+Uploads image bytes provided as raw base64 or a `data:image/...;base64,...` URL to Bitbucket Downloads and creates a pull request comment with markdown image syntax. Useful when an AI agent passes a chat-attached image directly to the MCP tool.
+
+Requires `BITBUCKET_ENABLE_LOCAL_UPLOADS=true` and a Bitbucket credential with repository write permission.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pull_request_id`: Pull request ID
+- `image_data`: Raw base64 image bytes or a `data:image/...;base64,...` URL (`.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`)
+- `image_mime_type` (optional): MIME type for raw base64 input (e.g. `image/png`). Ignored when `image_data` is a data URL.
+- `content` (optional): Markdown text to place before the image
+- `filename` (optional): Upload filename. Defaults to a generated filename using the detected image extension.
+
 #### `getPullRequestComment`
 
 Gets a specific comment on a pull request.
@@ -485,6 +591,33 @@ Deletes a comment on a pull request.
 - `repo_slug`: Repository slug
 - `pull_request_id`: Pull request ID
 - `comment_id`: Comment ID
+
+#### `deleteMyPullRequestComments`
+
+Deletes every comment on a pull request that was authored by the authenticated user. The caller is identified via `GET /user` (UUID match), with `BITBUCKET_USERNAME` as a nickname/display_name fallback. Returns the IDs of deleted comments along with any failures. Considered a dangerous operation — requires `BITBUCKET_ENABLE_DANGEROUS=true`.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pull_request_id`: Pull request ID
+- `dry_run` (optional): If `true`, return the matched comments without deleting them.
+
+#### `deletePullRequestComments`
+
+Bulk-deletes pull request comments by filter. At least one filter is required; multiple filters are combined with AND. Considered a dangerous operation — requires `BITBUCKET_ENABLE_DANGEROUS=true`.
+
+**Parameters:**
+
+- `workspace`: Bitbucket workspace name
+- `repo_slug`: Repository slug
+- `pull_request_id`: Pull request ID
+- `comment_ids` (optional): Specific comment IDs to target.
+- `author_uuid` (optional): Match comments authored by this UUID (e.g. `{04776764-62c7-453b-b97e-302f60395ceb}`).
+- `author_nickname` (optional): Match comments by nickname, username, or display_name (case-insensitive).
+- `resolved` (optional): `true` to only delete resolved comments, `false` to only delete unresolved.
+- `include_replies` (optional): Also delete reply comments whose ancestor matches the filter. Defaults to `false`.
+- `dry_run` (optional): If `true`, return the matched comments without deleting them.
 
 #### `resolveComment`
 
@@ -712,8 +845,8 @@ Gets logs for a specific pipeline step.
 
 ```bash
 # Clone the repository
-git clone https://github.com/MatanYemini/bitbucket-mcp.git
-cd bitbucket-mcp
+git clone https://github.com/yunior8908/local-bitbucket-mcp.git
+cd local-bitbucket-mcp
 
 # Install dependencies
 npm install
@@ -734,7 +867,7 @@ everything that guide expects:
    ```bash
    npm run build
    ```
-2. Generate the registry manifest (this reads `package.json` and emits `registry/bitbucket-mcp.manifest.json`):
+2. Generate the registry manifest (this reads `package.json` and emits `registry/bitbucket-mcp-plus.manifest.json`):
    ```bash
    npm run registry:manifest
    ```
@@ -750,8 +883,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Links
 
-- [GitHub Repository](https://github.com/MatanYemini/bitbucket-mcp)
-- [npm Package](https://www.npmjs.com/package/bitbucket-mcp)
+- [GitHub Repository](https://github.com/yunior8908/local-bitbucket-mcp)
+- [npm Package](https://www.npmjs.com/package/bitbucket-mcp-plus)
+- [Upstream `bitbucket-mcp` package (MatanYemini)](https://www.npmjs.com/package/bitbucket-mcp)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [Bitbucket REST API Documentation](https://developer.atlassian.com/cloud/bitbucket/rest/intro/)
 - [Bitbucket Cloud Documentation](https://support.atlassian.com/bitbucket-cloud/)
