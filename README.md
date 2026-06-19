@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/matanyemini-bitbucket-mcp-badge.png)](https://mseep.ai/app/matanyemini-bitbucket-mcp)
+
 # Bitbucket MCP
 
 A Model Context Protocol (MCP) server for integrating with Bitbucket Cloud and Server APIs. This MCP server enables AI assistants like Cursor to interact with your Bitbucket repositories, pull requests, and other resources.
