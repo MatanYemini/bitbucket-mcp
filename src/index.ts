@@ -969,10 +969,15 @@ class BitbucketServer {
                 type: "string",
                 description: "Comment content in markdown format",
               },
+              parent_id: {
+                type: "number",
+                description:
+                  "If set, posts this pending comment as a threaded reply to the given comment id. The reply inherits the parent's inline anchor (if any); do not also pass `inline` when replying.",
+              },
               inline: {
                 type: "object",
                 description:
-                  "Inline comment information for commenting on specific lines",
+                  "Inline comment information for commenting on specific lines. Ignored when `parent_id` is set.",
                 properties: {
                   path: {
                     type: "string",
@@ -2019,7 +2024,8 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string,
               args.content as string,
-              args.inline as InlineCommentInline
+              args.inline as InlineCommentInline,
+              args.parent_id as number | undefined
             );
           case "publishPendingComments":
             return await this.publishPendingComments(
@@ -3410,14 +3416,19 @@ class BitbucketServer {
     repo_slug: string,
     pull_request_id: string,
     content: string,
-    inline?: InlineCommentInline
+    inline?: InlineCommentInline,
+    parent_id?: number
   ) {
     try {
       logger.info("Adding pending comment to Bitbucket pull request", {
         workspace,
         repo_slug,
         pull_request_id,
-        inline: inline ? "inline comment" : "general comment",
+        mode: parent_id
+          ? "threaded reply"
+          : inline
+          ? "inline comment"
+          : "general comment",
       });
 
       // Use the existing addPullRequestComment method with pending=true
@@ -3427,7 +3438,8 @@ class BitbucketServer {
         pull_request_id,
         content,
         inline,
-        true // Set pending to true for draft comment
+        true, // Set pending to true for draft comment
+        parent_id
       );
     } catch (error) {
       logger.error("Error adding pending comment to pull request", {
