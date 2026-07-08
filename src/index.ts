@@ -788,6 +788,48 @@ class BitbucketServer {
           },
         },
         {
+          name: "requestChanges",
+          description: "Request changes on a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              ...PAGINATION_BASE_SCHEMA,
+              all: PAGINATION_ALL_SCHEMA,
+            },
+            required: ["workspace", "repo_slug", "pull_request_id"],
+          },
+        },
+        {
+          name: "removeChangeRequest",
+          description: "Remove a change request from a pull request",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Bitbucket workspace name",
+              },
+              repo_slug: { type: "string", description: "Repository slug" },
+              pull_request_id: {
+                type: "string",
+                description: "Pull request ID",
+              },
+              ...PAGINATION_BASE_SCHEMA,
+              all: PAGINATION_ALL_SCHEMA,
+            },
+            required: ["workspace", "repo_slug", "pull_request_id"],
+          },
+        },
+        {
           name: "declinePullRequest",
           description: "Decline a pull request",
           inputSchema: {
@@ -1964,6 +2006,18 @@ class BitbucketServer {
               args.repo_slug as string,
               args.pull_request_id as string
             );
+          case "requestChanges":
+            return await this.requestChanges(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string
+            );
+          case "removeChangeRequest":
+            return await this.removeChangeRequest(
+              args.workspace as string,
+              args.repo_slug as string,
+              args.pull_request_id as string
+            );
           case "declinePullRequest":
             return await this.declinePullRequest(
               args.workspace as string,
@@ -2787,6 +2841,87 @@ class BitbucketServer {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to unapprove pull request: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async requestChanges(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string
+  ) {
+    try {
+      logger.info("Requesting changes on Bitbucket pull request", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+
+      const response = await this.api.post(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/request-changes`,
+        {}
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error requesting changes on pull request", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to request changes on pull request: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  async removeChangeRequest(
+    workspace: string,
+    repo_slug: string,
+    pull_request_id: string
+  ) {
+    try {
+      logger.info("Removing change request from Bitbucket pull request", {
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+
+      await this.api.delete(
+        `/repositories/${workspace}/${repo_slug}/pullrequests/${pull_request_id}/request-changes`
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Pull request change request removed successfully.",
+          },
+        ],
+      };
+    } catch (error) {
+      logger.error("Error removing change request from pull request", {
+        error,
+        workspace,
+        repo_slug,
+        pull_request_id,
+      });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to remove change request from pull request: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
