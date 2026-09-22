@@ -19,6 +19,7 @@ import {
   BITBUCKET_DEFAULT_PAGELEN,
   BITBUCKET_MAX_PAGELEN,
 } from "./pagination.js";
+import { withoutDeletedThreads } from "./comments.js";
 
 // =========== LOGGER SETUP ==========
 // File-based logging with sensible defaults and ability to disable
@@ -834,7 +835,8 @@ class BitbucketServer {
         },
         {
           name: "getPullRequestComments",
-          description: "List comments on a pull request",
+          description:
+            "List comments on a pull request. Returns every page unless a specific `page` is requested, and omits deleted comments and their replies.",
           inputSchema: {
             type: "object",
             properties: {
@@ -952,7 +954,7 @@ class BitbucketServer {
         {
           name: "addPendingPullRequestComment",
           description:
-            "Add a pending (draft) comment to a pull request that can be published later",
+            "Add a pending (draft) comment to a pull request. Note: Bitbucket Cloud offers no REST endpoint that publishes a draft, so the comment stays invisible to reviewers until it is published from the Bitbucket UI. Use addPullRequestComment to post a comment reviewers can see.",
           inputSchema: {
             type: "object",
             properties: {
@@ -997,7 +999,8 @@ class BitbucketServer {
         },
         {
           name: "publishPendingComments",
-          description: "Publish all pending comments for a pull request",
+          description:
+            "Publish all pending comments for a pull request. Bitbucket Cloud rejects `pending` on PUT /comments/{id}, so this fails against Bitbucket Cloud and raises an error instead of reporting a false success.",
           inputSchema: {
             type: "object",
             properties: {
@@ -2910,7 +2913,9 @@ class BitbucketServer {
         {
           pagelen,
           page,
-          all,
+          // A review PR routinely carries more than one page of comments. Returning only
+          // the first page dropped the rest silently, because `next` is not passed on.
+          all: all ?? true,
           description: "getPullRequestComments",
         }
       );
@@ -2919,7 +2924,7 @@ class BitbucketServer {
         content: [
           {
             type: "text",
-            text: JSON.stringify(result.values, null, 2),
+            text: JSON.stringify(withoutDeletedThreads(result.values), null, 2),
           },
         ],
       };
@@ -3516,13 +3521,32 @@ class BitbucketServer {
         }
       }
 
+      const published = publishResults.filter(
+        (result) => result.status === "published"
+      ).length;
+
+      // Bitbucket Cloud rejects `pending` on PUT /comments/{id} with
+      // `{"fields": {"pending": "extra keys not allowed"}}`, and exposes no other endpoint
+      // that publishes a draft. Reporting a success count here regardless of the outcome
+      // told callers a review had been posted while every comment stayed invisible.
+      if (published === 0) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          `Failed to publish ${pendingComments.length} pending comment(s). ` +
+            `Bitbucket Cloud does not accept 'pending' on PUT /comments/{id}, so a draft ` +
+            `comment cannot be published through the REST API; publish it from the ` +
+            `Bitbucket UI, or post with addPullRequestComment instead of drafting. ` +
+            `Details: ${JSON.stringify(publishResults)}`
+        );
+      }
+
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify(
               {
-                message: `Published ${pendingComments.length} pending comments`,
+                message: `Published ${published} of ${pendingComments.length} pending comments`,
                 results: publishResults,
               },
               null,
@@ -3532,6 +3556,7 @@ class BitbucketServer {
         ],
       };
     } catch (error) {
+      if (error instanceof McpError) throw error;
       logger.error("Error publishing pending comments", {
         error,
         workspace,

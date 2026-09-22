@@ -402,11 +402,20 @@ Converts a regular pull request to draft status.
 
 Lists comments on a pull request.
 
+Returns every page by default, because a review pull request routinely carries more than one page of comments. Pass an explicit `page` to fetch a single page instead.
+
+Deleted comments and every reply below a deleted thread root are omitted. Bitbucket keeps deleted comments in the collection with their content blanked out, so an unfiltered list presents withdrawn feedback as if it were still live.
+
 **Parameters:**
 
 - `workspace`: Bitbucket workspace name
 - `repo_slug`: Repository slug
 - `pull_request_id`: Pull request ID
+- `pagelen` (optional): Items per page
+- `page` (optional): Fetch this single page instead of every page
+- `all` (optional): Set `false` alongside no `page` to fetch only the first page
+
+> **Draft comments:** Bitbucket Cloud accepts `pending: true` when creating a comment, but exposes no REST endpoint that publishes a draft — `PUT /comments/{id}` rejects `pending` with `extra keys not allowed`. A comment created through `addPendingPullRequestComment` therefore stays invisible to reviewers until it is published from the Bitbucket UI, and `publishPendingComments` raises an error against Bitbucket Cloud. Use `addPullRequestComment` for comments reviewers should see.
 
 #### `addPullRequestComment`
 
