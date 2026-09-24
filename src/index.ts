@@ -4936,9 +4936,16 @@ class BitbucketServer {
   }
 }
 
-// Create and start the server
-const server = new BitbucketServer();
-server.run().catch((error) => {
-  logger.error("Server error", error);
-  process.exit(1);
-});
+// Create and start the server, except under a test runner (jest sets
+// JEST_WORKER_ID in workers; importing the module there must not spawn
+// a stdio transport that keeps the worker alive)
+if (!process.env.JEST_WORKER_ID) {
+  const server = new BitbucketServer();
+  server.run().catch((error) => {
+    logger.error("Server error", error);
+    process.exit(1);
+  });
+}
+
+// Exposed for unit tests
+export { BitbucketServer };
