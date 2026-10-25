@@ -13,6 +13,7 @@ import winston from "winston";
 import os from "os";
 import path from "path";
 import fs from "fs";
+import { applyStoredCredentials, runAuthCommand } from "./auth.js";
 import {
   BitbucketPaginator,
   BITBUCKET_ALL_ITEMS_CAP,
@@ -544,7 +545,7 @@ class BitbucketServer {
 
     if (!this.config.token && !(this.config.username && this.config.password)) {
       throw new Error(
-        "Either BITBUCKET_TOKEN or BITBUCKET_USERNAME/PASSWORD is required"
+        "Either BITBUCKET_TOKEN or BITBUCKET_USERNAME/PASSWORD is required (or run `bitbucket-mcp auth login`)"
       );
     }
 
@@ -4936,9 +4937,19 @@ class BitbucketServer {
   }
 }
 
-// Create and start the server
-const server = new BitbucketServer();
-server.run().catch((error) => {
-  logger.error("Server error", error);
-  process.exit(1);
-});
+if (process.argv[2] === "auth") {
+  // CLI: bitbucket-mcp auth <login|status|logout>
+  runAuthCommand(process.argv.slice(3)).then((code) => process.exit(code));
+} else {
+  // Fill unset BITBUCKET_* variables from `bitbucket-mcp auth login`
+  if (applyStoredCredentials()) {
+    logger.info("Loaded stored Bitbucket credentials");
+  }
+
+  // Create and start the server
+  const server = new BitbucketServer();
+  server.run().catch((error) => {
+    logger.error("Server error", error);
+    process.exit(1);
+  });
+}

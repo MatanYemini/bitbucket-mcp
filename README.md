@@ -105,8 +105,45 @@ Configure the server using the following environment variables:
 | `BITBUCKET_LOG_FILE`         | Absolute path to a specific log file                                           | No       |
 | `BITBUCKET_LOG_DIR`          | Directory to store logs (defaults to OS-specific app log dir)                  | No       |
 | `BITBUCKET_LOG_PER_CWD`      | When `true`, nest logs under a per-working-directory subfolder                 | No       |
+| `BITBUCKET_CONFIG_DIR`       | Directory for credentials saved by `bitbucket-mcp auth login`                  | No       |
 
-Either `BITBUCKET_TOKEN` or both `BITBUCKET_USERNAME` and `BITBUCKET_PASSWORD` must be provided.
+Either `BITBUCKET_TOKEN` or both `BITBUCKET_USERNAME` and `BITBUCKET_PASSWORD` must be provided, either as environment variables or via `bitbucket-mcp auth login` (below).
+
+### Logging In Without Environment Variables
+
+Instead of putting credentials in your MCP client config, you can save them once:
+
+```bash
+npx -y bitbucket-mcp@latest auth login
+```
+
+It prompts for your workspace, Atlassian email and API token / app password (the secret is not echoed), verifies them against Bitbucket Cloud, and saves them to a file only your user can read:
+
+- macOS/Linux: `~/.config/bitbucket-mcp/credentials.json` (or `$XDG_CONFIG_HOME/bitbucket-mcp/`)
+- Windows: `%APPDATA%\bitbucket-mcp\credentials.json`
+
+The server then picks them up automatically, so the MCP config needs no `env` block:
+
+```json
+{
+  "mcpServers": {
+    "bitbucket": {
+      "command": "npx",
+      "args": ["-y", "bitbucket-mcp@latest"]
+    }
+  }
+}
+```
+
+Environment variables (and `.env`) still take precedence over stored credentials.
+
+```bash
+bitbucket-mcp auth status   # show stored credentials (secrets masked)
+bitbucket-mcp auth logout   # delete stored credentials
+bitbucket-mcp auth login --workspace acme --username you@example.com --password <token>  # non-interactive
+bitbucket-mcp auth login --workspace acme --token <access-token>                        # Bearer access token
+bitbucket-mcp auth login --url https://bitbucket.example.com/rest/api/1.0 ...               # self-hosted
+```
 
 ### Creating a Bitbucket App Password
 
